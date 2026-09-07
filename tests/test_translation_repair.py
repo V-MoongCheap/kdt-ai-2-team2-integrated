@@ -23,6 +23,15 @@ def test_quality_rejects_placeholders_and_product_changes(runner):
     assert "NUMBER_MISSING" in runner.quality_flags("猫粮2袋", "고양이 사료")
 
 
+def test_source_grounded_normalization_corrects_known_terms(runner):
+    value, changes = runner.normalize_translation("菠萝圈软糖", "바나나 소프트 글루")
+    assert value == "파인애플 젤리"
+    assert changes == ["菠萝->파인애플", "软糖->젤리"]
+    value, changes = runner.normalize_translation("防晒口罩", "방향제 마스크")
+    assert value == "자외선 차단 마스크"
+    assert changes == ["防晒->자외선 차단"]
+
+
 def test_repair_preserves_original_and_resumes(runner, tmp_path, monkeypatch):
     source = tmp_path / "source.parquet"
     output = tmp_path / "v2.parquet"
@@ -52,3 +61,42 @@ def test_repair_preserves_original_and_resumes(runner, tmp_path, monkeypatch):
     frame.assign(query_raw=["狗粮", "菠萝软糖"]).to_parquet(source)
     with pytest.raises(ValueError, match="snapshot changed"):
         runner.main()
+
+
+def test_checkpoint_retries_transient_windows_lock(runner, tmp_path, monkeypatch):
+    output = tmp_path / "output.parquet"
+    frame = pd.DataFrame({"value": [1]})
+    replace = Path.replace
+    attempts = []
+
+    def locked_replace(path, target):
+        attempts.append(target)
+        if len(attempts) < 3:
+            raise PermissionError("Reader still holds file")
+        return replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", locked_replace)
+    monkeypatch.setattr(runner.time, "sleep", lambda _: None)
+    runner.checkpoint(frame, output)
+    assert len(attempts) == 3
+    assert pd.read_parquet(output).value.tolist() == [1]
+
+
+def test_translation_specialist_uses_plain_text_and_preserves_id(runner, monkeypatch):
+    import io
+    import translate_kuaisearch
+
+    requests = []
+
+    def respond(request, timeout):
+        requests.append(json.loads(request.data))
+        return io.BytesIO(json.dumps({"message": {"content": "고양이 사료"}, "done_reason": "stop"}).encode())
+
+    monkeypatch.setattr(translate_kuaisearch.urllib.request, "urlopen", respond)
+    rows = [{"source_record_id": "id-1", "query_raw": "猫粮"}]
+    result = translate_kuaisearch._translate_batch(rows, "translategemma:4b", "http://localhost:11434", 120)
+    assert result == [{"source_record_id": "id-1", "query_translated": "고양이 사료"}]
+    assert requests[0]["messages"][0]["content"].endswith("\n\n\n猫粮")
+    assert "format" not in requests[0]
+    with pytest.raises(ValueError, match="batch-size 1"):
+        translate_kuaisearch._translate_batch(rows * 2, "translategemma:4b", "http://localhost:11434", 120)

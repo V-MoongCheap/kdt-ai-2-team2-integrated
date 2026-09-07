@@ -26,8 +26,57 @@ GLOSSARY = {
     "钙片": ["칼슘 정", "칼슘정", "칼슘 알약", "칼슘제", "칼슘 보충제"],
 }
 
+NORMALIZATION_RULES = {
+    "菠萝": ("파인애플", ("바나나", "파인애플", "菠萝")),
+    "米饼": ("쌀과자", ("밀가루", "베이비 케이크", "아기 케이크", "米饼")),
+    "猫粮": ("고양이 사료", ("고양이 약", "猫粮")),
+    "狗粮": ("강아지 사료", ("개 사료", "狗粮")),
+    "防晒": ("자외선 차단", ("방향제", "防晒")),
+    "鸽药": ("비둘기 약", ("고양이 약", "鸽药")),
+    "美瞳": ("컬러렌즈", ("미용렌즈", "미용 렌즈", "美瞳")),
+    "面膜": ("마스크팩", ("面膜",)),
+    "大豆油": ("대두유", ("콩기름", "大豆油")),
+    "钙片": ("칼슘정", ("칼슘 정", "钙片")),
+    "软糖": ("젤리", ("소프트 글루", "软糖")),
+}
+
+
+def normalize_translation(raw: str, translated: str) -> tuple[str, list[str]]:
+    """Apply only source-grounded terminology corrections; preserve other text."""
+    value = translated.strip()
+    changes = []
+    for source_term, (canonical, alternatives) in NORMALIZATION_RULES.items():
+        if source_term not in raw:
+            continue
+        updated = value
+        for alternative in alternatives:
+            updated = updated.replace(alternative, canonical)
+        if source_term == "防晒" and "자외선 차단" not in updated:
+            updated = updated.replace("자외선", canonical)
+        if updated != value:
+            value = updated
+            changes.append(f"{source_term}->{canonical}")
+    return value, changes
+
 
 def _translate_batch(rows: list[dict[str, str]], model: str, endpoint: str, timeout: int) -> list[dict[str, str]]:
+    if model.startswith("translategemma:"):
+        if len(rows) != 1:
+            raise ValueError("TranslateGemma requires batch-size 1 to preserve row alignment")
+        prompt = (
+            "You are a professional Chinese (zh-Hans) to Korean (ko) translator. "
+            "Your goal is to accurately convey the meaning and nuances of the original Chinese text "
+            "while adhering to Korean grammar, vocabulary, and cultural sensitivities.\n"
+            "Produce only the Korean translation, without any additional explanations or commentary. "
+            "Please translate the following Chinese text into Korean:\n\n\n" + rows[0]["query_raw"]
+        )
+        body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False, "options": {"temperature": 0, "num_ctx": 2048, "num_predict": 512}}, ensure_ascii=False).encode("utf-8")
+        request = urllib.request.Request(f"{endpoint.rstrip('/')}/api/chat", data=body, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if payload.get("done_reason") == "length":
+            raise ValueError("Translation was truncated")
+        return [{"source_record_id": rows[0]["source_record_id"], "query_translated": payload["message"]["content"]}]
     hints = {word: values[0] for word, values in GLOSSARY.items() if any(word in row["query_raw"] for row in rows)}
     prompt = (
         "You are a Chinese-to-Korean ecommerce translator. Translate every query into Korean. "
@@ -77,6 +126,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
+    if args.model.startswith("translategemma:"):
+        args.batch_size = 1
     frame = pd.read_parquet(args.input).fillna("")
     frame = frame.drop_duplicates(subset=["query_raw"]).reset_index(drop=True)
     if args.limit is not None:
@@ -103,7 +154,9 @@ def main() -> None:
                         raise ValueError("Unexpected or duplicate response ID")
                     if not isinstance(value, str) or not value.strip():
                         raise ValueError("Empty or invalid translation")
-                    lookup[record_id] = value.strip()
+                    raw_by_id = {str(row.source_record_id): str(row.query_raw) for row in pending.itertuples()}
+                    normalized, _ = normalize_translation(raw_by_id[record_id], value)
+                    lookup[record_id] = normalized
                 for index, row in pending.iterrows():
                     if str(row.source_record_id) in lookup:
                         frame.at[index, "query_translated"] = lookup[str(row.source_record_id)]

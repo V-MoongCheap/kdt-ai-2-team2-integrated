@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from audit_kuaisearch_translation import screen
-from translate_kuaisearch import GLOSSARY, _translate_batch
+from translate_kuaisearch import GLOSSARY, _translate_batch, normalize_translation
 
 
 def quality_flags(raw, translated):
@@ -31,7 +31,15 @@ def write_json(path, value):
 def checkpoint(frame, output):
     temporary = output.with_suffix(".tmp.parquet")
     frame.to_parquet(temporary, index=False)
-    temporary.replace(output)
+    # Windows readers can briefly hold the destination open during inspection.
+    for attempt in range(6):
+        try:
+            temporary.replace(output)
+            break
+        except PermissionError:
+            if attempt == 5:
+                raise
+            time.sleep(0.2 * (attempt + 1))
 
 
 def main():
@@ -45,7 +53,10 @@ def main():
     parser.add_argument("--limit", type=int)
     parser.add_argument("--passes", type=int, default=2)
     parser.add_argument("--priority-source-ids", default="", help="Comma-separated source IDs to process first")
+    parser.add_argument("--finalize-only", action="store_true", help="Export checkpoint reports without calling a model")
     args = parser.parse_args()
+    if args.model.startswith("translategemma:"):
+        args.batch_size = 1
     if args.input.resolve() == args.output.resolve():
         parser.error("Use a separate output to preserve original translations")
     if args.batch_size < 1 or args.passes < 1 or (args.limit is not None and args.limit < 1):
@@ -81,7 +92,7 @@ def main():
     started = time.perf_counter()
     calls = failures = consecutive_errors = 0
     journal = args.output.with_suffix(".attempts.jsonl")
-    for pass_number in range(args.passes):
+    for pass_number in range(0 if args.finalize_only else args.passes):
         batch_size = args.batch_size if pass_number == 0 else 1
         retry = []
         for start in range(0, len(pending), batch_size):
@@ -109,11 +120,12 @@ def main():
             for i in indexes:
                 frame.at[i, "repair_attempts"] = int(frame.at[i, "repair_attempts"]) + 1
                 value = lookup.get(str(i))
-                new_flags = quality_flags(str(frame.at[i, "query_raw"]), value.strip()) if isinstance(value, str) else ["MISSING_RESPONSE"]
-                frame.at[i, "repair_candidate"] = value if isinstance(value, str) else ""
+                normalized = normalize_translation(str(frame.at[i, "query_raw"]), value.strip())[0] if isinstance(value, str) else ""
+                new_flags = quality_flags(str(frame.at[i, "query_raw"]), normalized) if isinstance(value, str) else ["MISSING_RESPONSE"]
+                frame.at[i, "repair_candidate"] = normalized
                 frame.at[i, "repair_model"] = args.model
                 if not error and not new_flags:
-                    frame.at[i, "query_translated"] = value.strip()
+                    frame.at[i, "query_translated"] = normalized
                     frame.at[i, "repair_status"] = "AUTOMATED_CHECKS_PASSED"
                     frame.at[i, "repair_flags"] = ""
                 else:
@@ -137,7 +149,7 @@ def main():
     review = frame[frame.repair_flags.ne("")]
     review.to_csv(args.output.with_suffix(".review.csv"), index=False, encoding="utf-8-sig")
     frame[frame.repair_status.eq("AUTOMATED_CHECKS_PASSED")].to_csv(args.output.with_suffix(".changes.csv"), index=False, encoding="utf-8-sig")
-    report = {"status": "COMPLETED_WITH_REVIEW" if len(review) else "AUTOMATED_CHECKS_PASSED", "rows": len(frame), "selected": len(selected), "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_flagged": len(review), "source_nonlexical": len(no_text), "calls": calls, "failed_or_rejected_batches": failures, "runtime_seconds": round(time.perf_counter() - started, 3), "model": args.model, "accuracy": None}
+    report = {"status": "CHECKPOINT_EXPORTED" if args.finalize_only else "COMPLETED_WITH_REVIEW" if len(review) else "AUTOMATED_CHECKS_PASSED", "rows": len(frame), "selected": len(selected), "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_flagged": len(review), "source_nonlexical": len(no_text), "calls": calls, "failed_or_rejected_batches": failures, "runtime_seconds": round(time.perf_counter() - started, 3), "model": args.model, "accuracy": None}
     write_json(args.output.with_suffix(".report.json"), report)
     write_json(args.output.with_suffix(".progress.json"), report)
     print(report, flush=True)
