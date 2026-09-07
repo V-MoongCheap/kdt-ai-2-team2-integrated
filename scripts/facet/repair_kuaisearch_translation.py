@@ -76,13 +76,14 @@ def main():
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--passes", type=int, default=2)
+    parser.add_argument("--checkpoint-every", type=int, default=10, help="Save the parquet checkpoint every N batches")
     parser.add_argument("--priority-source-ids", default="", help="Comma-separated source IDs to process first")
     parser.add_argument("--finalize-only", action="store_true", help="Export checkpoint reports without calling a model")
     args = parser.parse_args()
     if args.input.resolve() == args.output.resolve():
         parser.error("Use a separate output to preserve original translations")
-    if args.batch_size < 1 or args.passes < 1 or (args.limit is not None and args.limit < 1):
-        parser.error("batch-size, passes and limit must be positive")
+    if args.batch_size < 1 or args.passes < 1 or args.checkpoint_every < 1 or (args.limit is not None and args.limit < 1):
+        parser.error("batch-size, passes, checkpoint-every and limit must be positive")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     source_hash = hashlib.sha256(args.input.read_bytes()).hexdigest()
     metadata = args.output.with_suffix(".metadata.json")
@@ -130,6 +131,12 @@ def main():
     frame.loc[source_nontranslatable, "repair_blocking_flags"] = ""
     nonlexical_indices = set(no_text) | set(source_nontranslatable)
     pending = [i for i in selected if i not in nonlexical_indices]
+    # Repeated raw queries need one model call. Results are copied back to all
+    # rows sharing the same source text after validation.
+    raw_groups = {}
+    for index in pending:
+        raw_groups.setdefault(str(frame.at[index, "query_raw"]), []).append(index)
+    pending = [indices[0] for indices in raw_groups.values()]
     started = time.perf_counter()
     calls = failures = consecutive_errors = 0
     journal = args.output.with_suffix(".attempts.jsonl")
@@ -161,7 +168,7 @@ def main():
             consecutive_errors = consecutive_errors + 1 if error else 0
             rejected = []
             for i in indexes:
-                frame.at[i, "repair_attempts"] = int(frame.at[i, "repair_attempts"]) + 1
+                targets = raw_groups.get(str(frame.at[i, "query_raw"]), [i])
                 value = lookup.get(str(i))
                 normalized = normalize_translation(str(frame.at[i, "query_raw"]), value.strip())[0] if isinstance(value, str) else ""
                 all_flags = quality_flags(str(frame.at[i, "query_raw"]), normalized) if isinstance(value, str) else ["MISSING_RESPONSE"]
@@ -175,23 +182,29 @@ def main():
                         all_flags = fallback_flags + ["CJK_FALLBACK_TRANSLITERATION"]
                         new_flags = fallback_blocking
                         frame.at[i, "repair_status"] = "TRANSLITERATED_REVIEW"
-                frame.at[i, "repair_candidate"] = normalized
-                frame.at[i, "repair_blocking_flags"] = "|".join(new_flags)
-                frame.at[i, "repair_model"] = args.model
+                for target in targets:
+                    frame.at[target, "repair_attempts"] = int(frame.at[target, "repair_attempts"]) + 1
+                    frame.at[target, "repair_candidate"] = normalized
+                    frame.at[target, "repair_blocking_flags"] = "|".join(new_flags)
+                    frame.at[target, "repair_model"] = args.model
                 if not error and not new_flags:
-                    frame.at[i, "query_translated"] = normalized
-                    if frame.at[i, "repair_status"] != "TRANSLITERATED_REVIEW":
-                        frame.at[i, "repair_status"] = "AUTOMATED_CHECKS_PASSED"
-                    frame.at[i, "repair_flags"] = "|".join(all_flags)
+                    for target in targets:
+                        frame.at[target, "query_translated"] = normalized
+                        if frame.at[target, "repair_status"] != "TRANSLITERATED_REVIEW":
+                            frame.at[target, "repair_status"] = "AUTOMATED_CHECKS_PASSED"
+                        frame.at[target, "repair_flags"] = "|".join(all_flags)
                 else:
-                    frame.at[i, "repair_status"] = "NEEDS_REVIEW"
-                    rejected.append({"row": i, "flags": new_flags})
+                    for target in targets:
+                        frame.at[target, "repair_status"] = "NEEDS_REVIEW"
+                    rejected.append({"row": i, "duplicate_rows": len(targets), "flags": new_flags})
                     retry.append(i)
             if error or rejected:
                 failures += 1
             with journal.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"model": args.model, "rows": indexes, "response": result, "error": error, "rejected": rejected, "runtime_seconds": round(time.perf_counter() - call_start, 3)}, ensure_ascii=False) + "\n")
-            checkpoint(frame, args.output)
+            is_last_batch = start + batch_size >= len(pending)
+            if calls % args.checkpoint_every == 0 or is_last_batch:
+                checkpoint(frame, args.output)
             progress = {"status": "RUNNING", "updated_at": datetime.now(timezone.utc).isoformat(), "pass": pass_number + 1, "processed": min(start + batch_size, len(pending)), "pass_rows": len(pending), "calls": calls, "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_blocking": int(frame.repair_blocking_flags.ne("").sum()), "runtime_seconds": round(time.perf_counter() - started, 3)}
             write_json(args.output.with_suffix(".progress.json"), progress)
             print(progress, flush=True)
