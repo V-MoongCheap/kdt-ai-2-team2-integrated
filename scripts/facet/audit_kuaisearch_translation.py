@@ -18,6 +18,11 @@ DOMAIN_PATTERNS = {
 SUPPLEMENT = r"维生素|益生菌|鱼油|蛋白粉|胶原蛋白|钙片|褪黑素|膳食纤维|辅酶"
 
 
+def numeric_tokens(value):
+    normalized = str(value).translate(str.maketrans("零〇一二三四五六七八九", "00123456789"))
+    return {str(int(token)) for token in re.findall(r"\d+", normalized)}
+
+
 def screen(raw, translated):
     flags = []
     if not translated.strip():
@@ -32,8 +37,14 @@ def screen(raw, translated):
         flags.append("NO_HANGUL")
     if re.search(r"</?think>|Okay,|Let's|let's", translated):
         flags.append("EXPLANATION")
-    if set(re.findall(r"\d+", raw)) - set(re.findall(r"\d+", translated)):
-        flags.append("NUMBER_MISSING")
+    raw_digits = set(re.findall(r"\d+", raw))
+    translated_digits = set(re.findall(r"\d+", translated))
+    if raw_digits - translated_digits:
+        # Chinese digit words can be mixed with Arabic digits, e.g. 四00三.
+        # Use the normalized comparison only for that mixed-number case.
+        mixed_number_ok = bool(re.search(r"[零〇一二三四五六七八九].*\d|\d.*[零〇一二三四五六七八九]", raw)) and numeric_tokens(raw).issubset(numeric_tokens(translated))
+        if not mixed_number_ok:
+            flags.append("NUMBER_MISSING")
     domains = [key for key, pattern in DOMAIN_PATTERNS.items() if re.search(pattern, raw)]
     supplement = bool(re.search(SUPPLEMENT, raw))
     scope = "MIXED_REVIEW" if domains and supplement else "OUT_OF_SCOPE_CANDIDATE" if domains else "SUPPLEMENT_CANDIDATE" if supplement else "UNKNOWN_REVIEW"
@@ -55,7 +66,7 @@ def main():
     for row in frame.itertuples():
         flags, scope, evidence = screen(str(row.query_raw), str(row.query_translated))
         if is_source_nontranslatable(row.query_raw):
-            flags = "|".join(flag for flag in flags.split("|") if flag not in {"NO_HANGUL", "UNCHANGED"})
+            flags = "|".join(flag for flag in flags.split("|") if flag not in {"NO_HANGUL", "UNCHANGED", "PLACEHOLDER"})
         results.append((flags, scope, evidence))
     frame[["translation_flags", "scope_candidate", "scope_evidence"]] = pd.DataFrame(results, index=frame.index)
     args.output.mkdir(parents=True, exist_ok=True)
