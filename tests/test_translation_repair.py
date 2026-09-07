@@ -30,6 +30,16 @@ def test_source_grounded_normalization_corrects_known_terms(runner):
     value, changes = runner.normalize_translation("防晒口罩", "방향제 마스크")
     assert value == "자외선 차단 마스크"
     assert changes == ["防晒->자외선 차단"]
+    value, _ = runner.normalize_translation("茯苓", "茯苓")
+    assert value == "복령"
+
+
+def test_nontranslatable_sources_and_chinese_numbers(runner):
+    assert runner.is_source_nontranslatable("https://example.com/item")
+    assert runner.is_source_nontranslatable("AB-001")
+    assert not runner.is_source_nontranslatable("고양이 사료")
+    assert runner.numeric_tokens("四00三") == {"4003"}
+    assert "NUMBER_MISSING" not in runner.quality_flags("压缩饼干军款四00三厂", "압축 비스킷 군용 4003 공장")
 
 
 def test_repair_preserves_original_and_resumes(runner, tmp_path, monkeypatch):

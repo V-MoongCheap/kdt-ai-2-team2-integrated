@@ -11,11 +11,13 @@ from pathlib import Path
 import pandas as pd
 
 from audit_kuaisearch_translation import screen
-from translate_kuaisearch import GLOSSARY, _translate_batch, normalize_translation
+from translate_kuaisearch import GLOSSARY, _translate_batch, normalize_translation, numeric_tokens
 
 
 def quality_flags(raw, translated):
     flags = [flag for flag in screen(raw, translated)[0].split("|") if flag]
+    if "NUMBER_MISSING" in flags and numeric_tokens(raw).issubset(numeric_tokens(translated)):
+        flags.remove("NUMBER_MISSING")
     for word, meanings in GLOSSARY.items():
         if word in raw and not any(meaning in translated for meaning in meanings):
             flags.append("TERM_MISMATCH:" + word)
@@ -29,6 +31,12 @@ def blocking_quality_flags(flags):
     and constraints were translated. It remains visible in the audit columns.
     """
     return [flag for flag in flags if flag not in {"CJK_REMAINS", "NO_HANGUL"}]
+
+
+def is_source_nontranslatable(raw):
+    """Return true for identifiers already expressed without Chinese/Korean text."""
+    value = str(raw).strip()
+    return bool(value) and not re.search(r"[\u4e00-\u9fff]", value) and not re.search(r"[\uac00-\ud7a3]", value)
 
 
 def write_json(path, value):
@@ -111,14 +119,19 @@ def main():
     candidates.sort(key=lambda i: (str(frame.at[i, "source_record_id"]) not in priority_ids, not any(flag.startswith("TERM_MISMATCH") for flag in blocking_flags[i]), "PLACEHOLDER" not in blocking_flags[i], i))
     selected = candidates[:args.limit] if args.limit else candidates
     no_text = [i for i in selected if not re.search(r"[\w]", str(frame.at[i, "query_raw"]))]
+    source_nontranslatable = [i for i in selected if is_source_nontranslatable(frame.at[i, "query_raw"])]
     frame.loc[no_text, "repair_status"] = "SOURCE_NONLEXICAL_REVIEW"
-    nonlexical_indices = set(no_text)
+    frame.loc[source_nontranslatable, "repair_status"] = "SOURCE_NONTRANSLATABLE"
+    frame.loc[source_nontranslatable, "repair_blocking_flags"] = ""
+    nonlexical_indices = set(no_text) | set(source_nontranslatable)
     pending = [i for i in selected if i not in nonlexical_indices]
     started = time.perf_counter()
     calls = failures = consecutive_errors = 0
     journal = args.output.with_suffix(".attempts.jsonl")
     for pass_number in range(0 if args.finalize_only else args.passes):
-        batch_size = args.batch_size if pass_number == 0 else 1
+        # Keep retry batches small enough for stable JSON, but do not fall back
+        # to one model call per row on the second pass.
+        batch_size = args.batch_size
         retry = []
         for start in range(0, len(pending), batch_size):
             indexes = pending[start:start + batch_size]
@@ -176,7 +189,7 @@ def main():
     review = frame[frame.repair_blocking_flags.ne("")]
     review.to_csv(args.output.with_suffix(".review.csv"), index=False, encoding="utf-8-sig")
     frame[frame.repair_status.eq("AUTOMATED_CHECKS_PASSED")].to_csv(args.output.with_suffix(".changes.csv"), index=False, encoding="utf-8-sig")
-    report = {"status": "CHECKPOINT_EXPORTED" if args.finalize_only else "COMPLETED_WITH_REVIEW" if len(review) else "AUTOMATED_CHECKS_PASSED", "rows": len(frame), "selected": len(selected), "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_blocking": len(review), "source_nonlexical": len(no_text), "calls": calls, "failed_or_rejected_batches": failures, "runtime_seconds": round(time.perf_counter() - started, 3), "model": args.model, "accuracy": None}
+    report = {"status": "CHECKPOINT_EXPORTED" if args.finalize_only else "COMPLETED_WITH_REVIEW" if len(review) else "AUTOMATED_CHECKS_PASSED", "rows": len(frame), "selected": len(selected), "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_blocking": len(review), "source_nonlexical": len(no_text), "source_nontranslatable": len(source_nontranslatable), "calls": calls, "failed_or_rejected_batches": failures, "runtime_seconds": round(time.perf_counter() - started, 3), "model": args.model, "accuracy": None}
     write_json(args.output.with_suffix(".report.json"), report)
     write_json(args.output.with_suffix(".progress.json"), report)
     print(report, flush=True)

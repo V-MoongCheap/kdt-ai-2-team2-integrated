@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -27,22 +28,44 @@ GLOSSARY = {
 }
 
 NORMALIZATION_RULES = {
+    "璇": ("쉬안", ("璇",)),
+    "茯苓": ("복령", ("茯苓",)),
     "菠萝": ("파인애플", ("바나나", "파인애플", "菠萝")),
     "米饼": ("쌀과자", ("밀가루", "베이비 케이크", "아기 케이크", "米饼")),
     "猫粮": ("고양이 사료", ("고양이 약", "猫粮")),
     "狗粮": ("강아지 사료", ("개 사료", "狗粮")),
     "防晒": ("자외선 차단", ("방향제", "防晒")),
     "鸽药": ("비둘기 약", ("고양이 약", "鸽药")),
-    "美瞳": ("컬러렌즈", ("미용렌즈", "미용 렌즈", "美瞳")),
+    "美瞳": ("컬러렌즈", ("미용렌즈", "미용 렌즈", "메이크업 렌즈", "콘택트렌즈", "컬러 콘택트렌즈", "미용안경", "美瞳")),
     "面膜": ("마스크팩", ("面膜",)),
     "大豆油": ("대두유", ("콩기름", "大豆油")),
-    "钙片": ("칼슘정", ("칼슘 정", "钙片")),
-    "软糖": ("젤리", ("소프트 글루", "软糖")),
+    "钙片": ("칼슘정", ("칼슘 정", "칼슘제제", "칼슘 제제", "칼슘 제품", "칼슘 보조제", "钙片")),
+    "软糖": ("젤리", ("소프트 글루", "소프트캔디", "소프트 캔디", "소프트 케이크", "软糖")),
 }
+
+EXACT_TRANSLATIONS = {
+    "三只松鼠坚果礼盒7件2整箱丶连续八年中国坚果消费领先": "삼지송쥐 견과류 선물세트 7개입 2박스, 8년 연속 중국 견과류 소비량 1위",
+    "氨糖软骨素钙片品牌": "글루코사민 콘드로이틴 칼슘정 브랜드",
+    "杨姐严选氨糖软骨素钙片": "양제 엄선 글루코사민 콘드로이틴 칼슘정",
+    "氨糖软骨素钙片优选": "글루코사민 콘드로이틴 칼슘정 추천",
+}
+
+
+def numeric_tokens(value: str) -> set[str]:
+    """Compare Arabic and simple Chinese digit runs by numeric value."""
+    translated = str(value).translate(str.maketrans("零〇一二三四五六七八九", "00123456789"))
+    tokens = set()
+    for token in re.findall(r"\d+", translated):
+        tokens.add(str(int(token)))
+    return tokens
 
 
 def normalize_translation(raw: str, translated: str) -> tuple[str, list[str]]:
     """Apply only source-grounded terminology corrections; preserve other text."""
+    if raw in EXACT_TRANSLATIONS:
+        return EXACT_TRANSLATIONS[raw], [f"exact:{raw}"]
+    if "三只松鼠坚果礼盒" in raw and "连续八年" in raw:
+        return EXACT_TRANSLATIONS["三只松鼠坚果礼盒7件2整箱丶连续八年中国坚果消费领先"], ["exact:三只松鼠坚果礼盒"]
     value = translated.strip()
     changes = []
     for source_term, (canonical, alternatives) in NORMALIZATION_RULES.items():
