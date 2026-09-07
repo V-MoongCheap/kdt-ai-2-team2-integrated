@@ -106,7 +106,12 @@ def _translate_batch(rows: list[dict[str, str]], model: str, endpoint: str, time
         }},
         "required": ["translations"],
     }
-    body = json.dumps({"model": model, "prompt": prompt, "format": schema, "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 4096}, "stream": False, "think": False}, ensure_ascii=False).encode("utf-8")
+    # Larger repair batches need enough output budget for one JSON object per
+    # row; otherwise Ollama can truncate the JSON even when the model has
+    # otherwise translated the input correctly.
+    num_ctx = 32768 if len(rows) > 100 else 8192
+    num_predict = 16000 if len(rows) > 100 else 4096
+    body = json.dumps({"model": model, "prompt": prompt, "format": schema, "options": {"temperature": 0, "num_ctx": num_ctx, "num_predict": num_predict}, "stream": False, "think": False}, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(f"{endpoint.rstrip('/')}/api/generate", data=body, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))

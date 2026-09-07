@@ -35,29 +35,29 @@ def test_source_grounded_normalization_corrects_known_terms(runner):
 def test_repair_preserves_original_and_resumes(runner, tmp_path, monkeypatch):
     source = tmp_path / "source.parquet"
     output = tmp_path / "v2.parquet"
-    frame = pd.DataFrame({"source_record_id": ["1", "2"], "query_raw": ["猫粮", "菠萝软糖"], "query_translated": ["...", "바나나 젤리"]})
+    frame = pd.DataFrame({"source_record_id": ["1", "2"], "query_raw": ["猫粮", "面膜"], "query_translated": ["...", "..."]})
     frame.to_parquet(source, index=False)
     original = source.read_bytes()
     monkeypatch.setattr("sys.argv", ["repair", "--input", str(source), "--output", str(output), "--passes", "1"])
     monkeypatch.setattr(runner, "_translate_batch", lambda *args: [{"source_record_id": "0", "query_translated": "고양이 사료"}])
     runner.main()
     saved = pd.read_parquet(output)
-    assert saved.query_translated.tolist() == ["고양이 사료", "바나나 젤리"]
+    assert saved.query_translated.tolist() == ["고양이 사료", "..."]
     assert saved.repair_status.tolist() == ["AUTOMATED_CHECKS_PASSED", "NEEDS_REVIEW"]
     assert source.read_bytes() == original
     calls = []
 
     def translate(rows, *args):
         calls.extend(rows)
-        return [{"source_record_id": "1", "query_translated": "파인애플 젤리"}]
+        return [{"source_record_id": "1", "query_translated": "마스크팩"}]
 
     monkeypatch.setattr(runner, "_translate_batch", translate)
     runner.main()
     assert len(calls) == 1
     assert calls[0]["source_record_id"] == "1"
     report = json.loads(output.with_suffix(".report.json").read_text())
-    assert report["remaining_flagged"] == 0
-    assert pd.read_parquet(output).translation_original.tolist() == ["...", "바나나 젤리"]
+    assert report["remaining_blocking"] == 0
+    assert pd.read_parquet(output).translation_original.tolist() == ["...", "..."]
     frame.assign(query_raw=["狗粮", "菠萝软糖"]).to_parquet(source)
     with pytest.raises(ValueError, match="snapshot changed"):
         runner.main()

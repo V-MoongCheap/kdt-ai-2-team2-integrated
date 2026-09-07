@@ -22,6 +22,15 @@ def quality_flags(raw, translated):
     return flags
 
 
+def blocking_quality_flags(flags):
+    """Return errors that make a candidate unsafe to replace automatically.
+
+    CJK_REMAINS can be a legitimate brand or seller name when the product term
+    and constraints were translated. It remains visible in the audit columns.
+    """
+    return [flag for flag in flags if flag not in {"CJK_REMAINS", "NO_HANGUL"}]
+
+
 def write_json(path, value):
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -69,21 +78,37 @@ def main():
         if previous_meta["source_sha256"] != source_hash:
             raise ValueError("Source snapshot changed; use a new output")
         frame = pd.read_parquet(args.output).fillna("")
+        if "repair_blocking_flags" not in frame:
+            frame["repair_blocking_flags"] = ""
     else:
         frame = pd.read_parquet(args.input).fillna("")
         frame["translation_original"] = frame.query_translated
         frame["repair_status"] = "NOT_REPROCESSED"
         frame["repair_model"] = ""
         frame["repair_flags"] = ""
+        frame["repair_blocking_flags"] = ""
         frame["repair_candidate"] = ""
         frame["repair_attempts"] = 0
         write_json(metadata, {"version": "translation_repair_v2", "source_sha256": source_hash, "source": str(args.input), "accuracy": None})
+    # Apply source-grounded glossary corrections before spending a model call.
+    # This also fixes rows where the previous translation simply echoed a known
+    # Chinese product term.
+    for index, row in frame.iterrows():
+        normalized, changes = normalize_translation(str(row.query_raw), str(row.query_translated))
+        if changes and normalized != str(row.query_translated).strip():
+            frame.at[index, "query_translated"] = normalized
+            frame.at[index, "repair_candidate"] = normalized
+            frame.at[index, "repair_model"] = "source-grounded-normalizer"
+            frame.at[index, "repair_status"] = "AUTOMATED_NORMALIZATION"
     flags = [quality_flags(str(row.query_raw), str(row.query_translated)) for row in frame.itertuples()]
+    blocking_flags = [blocking_quality_flags(value) for value in flags]
     frame["repair_flags"] = ["|".join(value) for value in flags]
-    candidates = [index for index, value in enumerate(flags) if value]
+    # CJK_REMAINS/NO_HANGUL are review warnings, not automatic-repair blockers.
+    # Once a row passes the hard checks, do not send it through the model again.
+    candidates = [index for index, value in enumerate(blocking_flags) if value]
     # Correct known term errors and placeholders first; ambiguous names remain reviewable.
     priority_ids = set(args.priority_source_ids.split(",")) - {""}
-    candidates.sort(key=lambda i: (str(frame.at[i, "source_record_id"]) not in priority_ids, not any(flag.startswith("TERM_MISMATCH") for flag in flags[i]), "PLACEHOLDER" not in flags[i], i))
+    candidates.sort(key=lambda i: (str(frame.at[i, "source_record_id"]) not in priority_ids, not any(flag.startswith("TERM_MISMATCH") for flag in blocking_flags[i]), "PLACEHOLDER" not in blocking_flags[i], i))
     selected = candidates[:args.limit] if args.limit else candidates
     no_text = [i for i in selected if not re.search(r"[\w]", str(frame.at[i, "query_raw"]))]
     frame.loc[no_text, "repair_status"] = "SOURCE_NONLEXICAL_REVIEW"
@@ -121,13 +146,15 @@ def main():
                 frame.at[i, "repair_attempts"] = int(frame.at[i, "repair_attempts"]) + 1
                 value = lookup.get(str(i))
                 normalized = normalize_translation(str(frame.at[i, "query_raw"]), value.strip())[0] if isinstance(value, str) else ""
-                new_flags = quality_flags(str(frame.at[i, "query_raw"]), normalized) if isinstance(value, str) else ["MISSING_RESPONSE"]
+                all_flags = quality_flags(str(frame.at[i, "query_raw"]), normalized) if isinstance(value, str) else ["MISSING_RESPONSE"]
+                new_flags = blocking_quality_flags(all_flags)
                 frame.at[i, "repair_candidate"] = normalized
+                frame.at[i, "repair_blocking_flags"] = "|".join(new_flags)
                 frame.at[i, "repair_model"] = args.model
                 if not error and not new_flags:
                     frame.at[i, "query_translated"] = normalized
                     frame.at[i, "repair_status"] = "AUTOMATED_CHECKS_PASSED"
-                    frame.at[i, "repair_flags"] = ""
+                    frame.at[i, "repair_flags"] = "|".join(all_flags)
                 else:
                     frame.at[i, "repair_status"] = "NEEDS_REVIEW"
                     rejected.append({"row": i, "flags": new_flags})
@@ -137,7 +164,7 @@ def main():
             with journal.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"model": args.model, "rows": indexes, "response": result, "error": error, "rejected": rejected, "runtime_seconds": round(time.perf_counter() - call_start, 3)}, ensure_ascii=False) + "\n")
             checkpoint(frame, args.output)
-            progress = {"status": "RUNNING", "updated_at": datetime.now(timezone.utc).isoformat(), "pass": pass_number + 1, "processed": min(start + batch_size, len(pending)), "pass_rows": len(pending), "calls": calls, "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_flagged": int(frame.repair_flags.ne("").sum()), "runtime_seconds": round(time.perf_counter() - started, 3)}
+            progress = {"status": "RUNNING", "updated_at": datetime.now(timezone.utc).isoformat(), "pass": pass_number + 1, "processed": min(start + batch_size, len(pending)), "pass_rows": len(pending), "calls": calls, "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_blocking": int(frame.repair_blocking_flags.ne("").sum()), "runtime_seconds": round(time.perf_counter() - started, 3)}
             write_json(args.output.with_suffix(".progress.json"), progress)
             print(progress, flush=True)
             if consecutive_errors >= 3:
@@ -146,10 +173,10 @@ def main():
         if not pending or consecutive_errors >= 3:
             break
     checkpoint(frame, args.output)
-    review = frame[frame.repair_flags.ne("")]
+    review = frame[frame.repair_blocking_flags.ne("")]
     review.to_csv(args.output.with_suffix(".review.csv"), index=False, encoding="utf-8-sig")
     frame[frame.repair_status.eq("AUTOMATED_CHECKS_PASSED")].to_csv(args.output.with_suffix(".changes.csv"), index=False, encoding="utf-8-sig")
-    report = {"status": "CHECKPOINT_EXPORTED" if args.finalize_only else "COMPLETED_WITH_REVIEW" if len(review) else "AUTOMATED_CHECKS_PASSED", "rows": len(frame), "selected": len(selected), "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_flagged": len(review), "source_nonlexical": len(no_text), "calls": calls, "failed_or_rejected_batches": failures, "runtime_seconds": round(time.perf_counter() - started, 3), "model": args.model, "accuracy": None}
+    report = {"status": "CHECKPOINT_EXPORTED" if args.finalize_only else "COMPLETED_WITH_REVIEW" if len(review) else "AUTOMATED_CHECKS_PASSED", "rows": len(frame), "selected": len(selected), "repaired_total": int(frame.repair_status.eq("AUTOMATED_CHECKS_PASSED").sum()), "remaining_blocking": len(review), "source_nonlexical": len(no_text), "calls": calls, "failed_or_rejected_batches": failures, "runtime_seconds": round(time.perf_counter() - started, 3), "model": args.model, "accuracy": None}
     write_json(args.output.with_suffix(".report.json"), report)
     write_json(args.output.with_suffix(".progress.json"), report)
     print(report, flush=True)
