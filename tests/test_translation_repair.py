@@ -99,8 +99,11 @@ def test_translation_specialist_uses_plain_text_and_preserves_id(runner, monkeyp
     requests = []
 
     def respond(request, timeout):
-        requests.append(json.loads(request.data))
-        return io.BytesIO(json.dumps({"message": {"content": "고양이 사료"}, "done_reason": "stop"}).encode())
+        body = json.loads(request.data)
+        requests.append(body)
+        if "source_record_id" not in body.get("messages", [{}])[0].get("content", ""):
+            return io.BytesIO(json.dumps({"message": {"content": "고양이 사료"}, "done_reason": "stop"}).encode())
+        return io.BytesIO(json.dumps({"message": {"content": json.dumps({"translations": [{"source_record_id": "id-1", "query_translated": "고양이 사료"}, {"source_record_id": "id-1", "query_translated": "고양이 사료"}]})}, "done_reason": "stop"}).encode())
 
     monkeypatch.setattr(translate_kuaisearch.urllib.request, "urlopen", respond)
     rows = [{"source_record_id": "id-1", "query_raw": "猫粮"}]
@@ -108,5 +111,4 @@ def test_translation_specialist_uses_plain_text_and_preserves_id(runner, monkeyp
     assert result == [{"source_record_id": "id-1", "query_translated": "고양이 사료"}]
     assert requests[0]["messages"][0]["content"].endswith("\n\n\n猫粮")
     assert "format" not in requests[0]
-    with pytest.raises(ValueError, match="batch-size 1"):
-        translate_kuaisearch._translate_batch(rows * 2, "translategemma:4b", "http://localhost:11434", 120)
+    assert translate_kuaisearch._translate_batch(rows * 2, "translategemma:4b", "http://localhost:11434", 120)

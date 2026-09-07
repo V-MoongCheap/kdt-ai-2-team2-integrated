@@ -14,6 +14,7 @@ import urllib.request
 from pathlib import Path
 
 import pandas as pd
+from pypinyin import lazy_pinyin
 
 
 GLOSSARY = {
@@ -51,6 +52,16 @@ EXACT_TRANSLATIONS = {
 }
 
 
+def transliterate_cjk_for_review(value: str) -> str:
+    """Replace residual Chinese runs with readable pinyin review markers."""
+    def replace(match: re.Match[str]) -> str:
+        text = match.group(0)
+        syllables = " ".join(lazy_pinyin(text))
+        return f"[중국어 음역 검토: {syllables}]"
+
+    return re.sub(r"[\u3400-\u4dbf\u4e00-\u9fff]+", replace, str(value))
+
+
 def numeric_tokens(value: str) -> set[str]:
     """Compare Arabic and simple Chinese digit runs by numeric value."""
     translated = str(value).translate(str.maketrans("零〇一二三四五六七八九", "00123456789"))
@@ -84,14 +95,31 @@ def normalize_translation(raw: str, translated: str) -> tuple[str, list[str]]:
 
 def _translate_batch(rows: list[dict[str, str]], model: str, endpoint: str, timeout: int) -> list[dict[str, str]]:
     if model.startswith("translategemma:"):
-        if len(rows) != 1:
-            raise ValueError("TranslateGemma requires batch-size 1 to preserve row alignment")
+        if len(rows) > 1:
+            prompt = (
+                "Translate each Chinese ecommerce query into Korean. Return only a JSON object with a "
+                "translations array, preserving every source_record_id exactly. Do not leave Chinese "
+                "characters; transliterate every brand, person, place, and product name into Korean. "
+                "A response containing even one Chinese character is invalid. "
+                f"Input: {json.dumps(rows, ensure_ascii=False)}"
+            )
+            schema = {"type": "object", "properties": {"translations": {"type": "array", "minItems": len(rows), "maxItems": len(rows), "items": {"type": "object", "properties": {"source_record_id": {"type": "string"}, "query_translated": {"type": "string"}}, "required": ["source_record_id", "query_translated"]}}}, "required": ["translations"]}
+            body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "format": schema, "stream": False, "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 4096}}, ensure_ascii=False).encode("utf-8")
+            request = urllib.request.Request(f"{endpoint.rstrip('/')}/api/chat", data=body, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            content = payload["message"]["content"]
+            result = json.loads(content)
+            return result.get("translations", [])
         prompt = (
             "You are a professional Chinese (zh-Hans) to Korean (ko) translator. "
             "Your goal is to accurately convey the meaning and nuances of the original Chinese text "
             "while adhering to Korean grammar, vocabulary, and cultural sensitivities.\n"
             "Produce only the Korean translation, without any additional explanations or commentary. "
-            "Please translate the following Chinese text into Korean:\n\n\n" + rows[0]["query_raw"]
+            "Please translate the following Chinese text into Korean. "
+            "Translate or phonetically render every character, including brands and names. "
+            "Never copy Chinese characters into the answer; any Chinese character makes the answer invalid.\n\n\n"
+            + rows[0]["query_raw"]
         )
         body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False, "options": {"temperature": 0, "num_ctx": 2048, "num_predict": 512}}, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(f"{endpoint.rstrip('/')}/api/chat", data=body, headers={"Content-Type": "application/json"}, method="POST")
@@ -107,7 +135,8 @@ def _translate_batch(rows: list[dict[str, str]], model: str, endpoint: str, time
         "Preserve product type, animal species, ingredients, numbers, units, negation and constraints. "
         "Do not add benefits, advice, ingredients or explanations. Render names phonetically in Korean "
         "when their meaning is uncertain; do not invent a product. Preserve Latin identifiers. "
-        "Never return placeholders, ellipses, or untranslated Chinese. "
+        "For brands, people, and places without a Korean equivalent, use Korean phonetic transliteration. "
+        "Never return placeholders, ellipses, or Chinese characters. "
         "Return a JSON object with a translations array, exactly one object per input, containing "
         "source_record_id copied exactly and query_translated containing only the Korean query. "
         f"Terminology: {json.dumps(hints, ensure_ascii=False)}. "

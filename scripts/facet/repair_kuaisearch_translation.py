@@ -11,7 +11,13 @@ from pathlib import Path
 import pandas as pd
 
 from audit_kuaisearch_translation import screen
-from translate_kuaisearch import GLOSSARY, _translate_batch, normalize_translation, numeric_tokens
+from translate_kuaisearch import (
+    GLOSSARY,
+    _translate_batch,
+    normalize_translation,
+    numeric_tokens,
+    transliterate_cjk_for_review,
+)
 
 
 def quality_flags(raw, translated):
@@ -27,10 +33,11 @@ def quality_flags(raw, translated):
 def blocking_quality_flags(flags):
     """Return errors that make a candidate unsafe to replace automatically.
 
-    CJK_REMAINS can be a legitimate brand or seller name when the product term
-    and constraints were translated. It remains visible in the audit columns.
+    CJK_REMAINS is blocking because downstream Korean facet extraction must not
+    receive untranslated Chinese text. Proper names are handled by transliteration
+    in the model prompt or remain explicitly reviewable.
     """
-    return [flag for flag in flags if flag not in {"CJK_REMAINS", "NO_HANGUL"}]
+    return list(flags)
 
 
 def is_source_nontranslatable(raw):
@@ -72,8 +79,6 @@ def main():
     parser.add_argument("--priority-source-ids", default="", help="Comma-separated source IDs to process first")
     parser.add_argument("--finalize-only", action="store_true", help="Export checkpoint reports without calling a model")
     args = parser.parse_args()
-    if args.model.startswith("translategemma:"):
-        args.batch_size = 1
     if args.input.resolve() == args.output.resolve():
         parser.error("Use a separate output to preserve original translations")
     if args.batch_size < 1 or args.passes < 1 or (args.limit is not None and args.limit < 1):
@@ -111,8 +116,8 @@ def main():
     flags = [quality_flags(str(row.query_raw), str(row.query_translated)) for row in frame.itertuples()]
     blocking_flags = [blocking_quality_flags(value) for value in flags]
     frame["repair_flags"] = ["|".join(value) for value in flags]
-    # CJK_REMAINS/NO_HANGUL are review warnings, not automatic-repair blockers.
-    # Once a row passes the hard checks, do not send it through the model again.
+    # CJK_REMAINS is a hard check. Once a row passes all hard checks, do not send
+    # it through the model again.
     candidates = [index for index, value in enumerate(blocking_flags) if value]
     # Correct known term errors and placeholders first; ambiguous names remain reviewable.
     priority_ids = set(args.priority_source_ids.split(",")) - {""}
@@ -161,12 +166,22 @@ def main():
                 normalized = normalize_translation(str(frame.at[i, "query_raw"]), value.strip())[0] if isinstance(value, str) else ""
                 all_flags = quality_flags(str(frame.at[i, "query_raw"]), normalized) if isinstance(value, str) else ["MISSING_RESPONSE"]
                 new_flags = blocking_quality_flags(all_flags)
+                if isinstance(value, str) and normalized and "CJK_REMAINS" in new_flags:
+                    fallback = transliterate_cjk_for_review(normalized)
+                    fallback_flags = quality_flags(str(frame.at[i, "query_raw"]), fallback)
+                    fallback_blocking = blocking_quality_flags(fallback_flags)
+                    if "CJK_REMAINS" not in fallback_blocking:
+                        normalized = fallback
+                        all_flags = fallback_flags + ["CJK_FALLBACK_TRANSLITERATION"]
+                        new_flags = fallback_blocking
+                        frame.at[i, "repair_status"] = "TRANSLITERATED_REVIEW"
                 frame.at[i, "repair_candidate"] = normalized
                 frame.at[i, "repair_blocking_flags"] = "|".join(new_flags)
                 frame.at[i, "repair_model"] = args.model
                 if not error and not new_flags:
                     frame.at[i, "query_translated"] = normalized
-                    frame.at[i, "repair_status"] = "AUTOMATED_CHECKS_PASSED"
+                    if frame.at[i, "repair_status"] != "TRANSLITERATED_REVIEW":
+                        frame.at[i, "repair_status"] = "AUTOMATED_CHECKS_PASSED"
                     frame.at[i, "repair_flags"] = "|".join(all_flags)
                 else:
                     frame.at[i, "repair_status"] = "NEEDS_REVIEW"

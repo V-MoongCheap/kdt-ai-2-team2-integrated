@@ -40,13 +40,23 @@ def screen(raw, translated):
     return "|".join(flags), scope, "|".join(domains)
 
 
+def is_source_nontranslatable(raw):
+    value = str(raw).strip()
+    return bool(value) and not re.search(r"[\u4e00-\u9fff]", value) and not re.search(r"[\uac00-\ud7a3]", value)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, default=Path("data/interim/facet_evidence/kuaiseach_health_queries_ko.parquet"))
     parser.add_argument("--output", type=Path, default=Path("data/reports/kuaisearch_translation_audit_v1"))
     args = parser.parse_args()
     frame = pd.read_parquet(args.input).fillna("")
-    results = [screen(str(row.query_raw), str(row.query_translated)) for row in frame.itertuples()]
+    results = []
+    for row in frame.itertuples():
+        flags, scope, evidence = screen(str(row.query_raw), str(row.query_translated))
+        if is_source_nontranslatable(row.query_raw):
+            flags = "|".join(flag for flag in flags.split("|") if flag not in {"NO_HANGUL", "UNCHANGED"})
+        results.append((flags, scope, evidence))
     frame[["translation_flags", "scope_candidate", "scope_evidence"]] = pd.DataFrame(results, index=frame.index)
     args.output.mkdir(parents=True, exist_ok=True)
     frame.to_csv(args.output / "query_audit_v1.csv", index=False, encoding="utf-8-sig")
