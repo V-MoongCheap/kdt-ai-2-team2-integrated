@@ -1,4 +1,4 @@
-"""Run multi-family Facet Discovery over product, demand, and seller evidence."""
+"""Run multi-family Facet Discovery over product and seller evidence."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ CATEGORY_KEYS = {
 SOURCE_COLUMNS = [
     "category_key", "category_name", "source_product_id", "product_name",
     "source_category", "product_form", "functional_ingredients",
-    "regulated_function", "intake_method", "sampling_reason", "source_type",
+    "regulated_function", "consumer_search_text", "intake_method", "sampling_reason", "source_type",
     "price_text", "quantity_text", "seller_condition", "evidence_text",
 ]
 
@@ -170,7 +170,7 @@ def load_translated_queries(path: Path) -> pd.DataFrame:
                 "source_product_id": f"kuaisearch:{item.source_record_id}",
                 "product_name": item.query_translated,
                 "source_category": "KuaiSearch translated query",
-                "regulated_function": item.query_translated,
+                "consumer_search_text": item.query_translated,
                 "sampling_reason": "translated consumer search evidence",
                 "evidence_text": item.query_translated,
             })
@@ -178,11 +178,11 @@ def load_translated_queries(path: Path) -> pd.DataFrame:
 
 
 def build_multisource_input(paths: dict[str, Path]) -> pd.DataFrame:
+    # Demand data describes request conditions, not product attributes. Keep it
+    # in the demand-labeling pipeline instead of allowing it to create facets.
     frames = [
         load_products(paths["products"]),
         load_seller_offers(paths["sellers"]),
-        load_demands(paths["demands"]),
-        load_boards(paths["boards"]),
         load_translated_queries(paths["queries"]),
     ]
     data = pd.concat([frame for frame in frames if not frame.empty], ignore_index=True)
@@ -214,7 +214,7 @@ def add_data_selection_reason(candidates: pd.DataFrame, input_data: pd.DataFrame
     if candidates.empty:
         return candidates
     result = candidates.copy()
-    text_columns = ["product_name", "product_form", "functional_ingredients", "regulated_function", "intake_method", "price_text", "quantity_text", "seller_condition", "evidence_text"]
+    text_columns = [column for column in ("product_name", "product_form", "functional_ingredients", "regulated_function", "consumer_search_text", "intake_method", "price_text", "quantity_text", "seller_condition", "evidence_text") if column in input_data.columns]
     source_counts = input_data.groupby(["category_key", "source_type"])["source_product_id"].nunique().to_dict()
     category_counts = input_data.groupby("category_key")["source_product_id"].nunique().to_dict()
     observed_cache: dict[tuple[str, str], tuple[int, list[str]]] = {}
@@ -331,7 +331,7 @@ def main() -> None:
     selected.to_csv(args.output_dir / "multisource_selected_candidates_v1.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(failures).to_csv(args.output_dir / "multisource_model_failures_v1.csv", index=False, encoding="utf-8-sig")
     source_counts = data["source_type"].value_counts().to_dict() if not data.empty else {}
-    report = {"status": "COMPLETED", "models": model_reports, "categories": sorted(categories), "input_rows": len(data), "source_row_counts": source_counts, "candidate_rows": len(candidate_frame), "selected_rows": len(selected), "consensus_selected_rows": int(selected.selection_status.eq("SELECTED_CANDIDATE").sum()) if not selected.empty else 0, "reason_present_rows": int(candidate_frame.reason_status.eq("PRESENT").sum()) if not candidate_frame.empty and "reason_status" in candidate_frame else 0, "failure_rows": len(failures), "synthetic_sources": ["GROUNDED_DEMAND_SYNTHETIC", "DEMAND_BOARD_SYNTHETIC"], "taxonomy_changed": False}
+    report = {"status": "COMPLETED", "models": model_reports, "categories": sorted(categories), "input_rows": len(data), "source_row_counts": source_counts, "candidate_rows": len(candidate_frame), "selected_rows": len(selected), "consensus_selected_rows": int(selected.selection_status.eq("SELECTED_CANDIDATE").sum()) if not selected.empty else 0, "reason_present_rows": int(candidate_frame.reason_status.eq("PRESENT").sum()) if not candidate_frame.empty and "reason_status" in candidate_frame else 0, "failure_rows": len(failures), "excluded_sources": ["GROUNDED_DEMAND_SYNTHETIC", "DEMAND_BOARD_SYNTHETIC"], "taxonomy_changed": False}
     (args.output_dir / "multisource_facet_discovery_report_v1.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     lines = ["# 다중 소스 Facet Discovery V1", "", f"- 대상 Category: {len(categories)}개", f"- 입력 행: {len(data):,}건", f"- 전체 후보: {len(candidate_frame):,}건", f"- 합의 후보: {report['consensus_selected_rows']:,}건", f"- 이유 포함 후보: {report['reason_present_rows']:,}건", f"- 실패: {len(failures):,}건", "", "## 입력 소스", "", "| 소스 유형 | 행 수 |", "|---|---:|"]
     lines.extend(f"| {key} | {value:,} |" for key, value in sorted(source_counts.items()))

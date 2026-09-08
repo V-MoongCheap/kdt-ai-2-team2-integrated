@@ -134,3 +134,26 @@ def test_data_selection_reason_reports_observed_rows_and_sources():
     assert result.iloc[0]["observed_row_count"] == 2
     assert result.iloc[0]["observed_source_type_count"] == 2
     assert "MFDS_PRODUCT" in result.iloc[0]["data_selection_reason"]
+
+
+def test_facet_input_excludes_synthetic_demand_sources(monkeypatch):
+    base = _input_frame().iloc[[0]].copy()
+    synthetic = base.copy()
+    synthetic["source_product_id"] = "demand:d1"
+    synthetic["source_type"] = "GROUNDED_DEMAND_SYNTHETIC"
+
+    monkeypatch.setattr(MODULE, "load_products", lambda path: base)
+    monkeypatch.setattr(MODULE, "load_seller_offers", lambda path: base.iloc[0:0])
+    monkeypatch.setattr(MODULE, "load_demands", lambda path: synthetic)
+    monkeypatch.setattr(MODULE, "load_boards", lambda path: synthetic)
+    monkeypatch.setattr(MODULE, "load_translated_queries", lambda path: base.iloc[0:0])
+
+    result = MODULE.build_multisource_input({
+        "products": Path("products.csv"),
+        "sellers": Path("sellers.csv"),
+        "demands": Path("demands.csv"),
+        "boards": Path("boards.json"),
+        "queries": Path("queries.parquet"),
+    })
+
+    assert set(result["source_type"]) == {"MFDS_PRODUCT"}

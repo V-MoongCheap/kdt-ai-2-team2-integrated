@@ -86,7 +86,7 @@ def _contains(haystack: Any, needle: str) -> bool:
 def review_candidates(candidates: pd.DataFrame, inputs: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     input_frame = inputs.fillna("").copy()
-    text_columns = [column for column in ("product_name", "product_form", "functional_ingredients", "regulated_function", "intake_method", "price_text", "quantity_text", "seller_condition", "evidence_text") if column in input_frame.columns]
+    text_columns = [column for column in ("product_name", "product_form", "functional_ingredients", "regulated_function", "consumer_search_text", "intake_method", "price_text", "quantity_text", "seller_condition", "evidence_text") if column in input_frame.columns]
     normalized_input = input_frame[text_columns].astype(str).map(normalize_text) if text_columns else pd.DataFrame(index=input_frame.index)
     for _, candidate in candidates.fillna("").iterrows():
         raw_name = str(candidate.get("name", ""))
