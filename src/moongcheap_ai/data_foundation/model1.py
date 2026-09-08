@@ -49,13 +49,14 @@ class UnavailableModelAdapter:
 class OllamaAdapter:
     provider = "ollama"
 
-    def __init__(self, model: str, endpoint: str = "http://localhost:11434") -> None:
+    def __init__(self, model: str, endpoint: str = "http://localhost:11434", prompt_path: Path | None = None) -> None:
         self.model = model
         self.endpoint = endpoint.rstrip("/")
+        self.prompt_path = prompt_path or PROMPT_PATH
 
     def generate_facet_candidates(self, category: str, products: list[dict[str, Any]], prompt_version: str) -> dict[str, Any]:
         product_text = json.dumps(products, ensure_ascii=False)
-        prompt_template = PROMPT_PATH.read_text(encoding="utf-8")
+        prompt_template = self.prompt_path.read_text(encoding="utf-8")
         prompt = f"{prompt_template}\n\nPrompt version: {prompt_version}\nTarget category_key: {category}\nInput products (evidence only):\n{product_text}"
         body = json.dumps({"model": self.model, "prompt": prompt, "format": "json", "stream": False, "think": False}, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(f"{self.endpoint}/api/generate", data=body, headers={"Content-Type": "application/json"}, method="POST")
