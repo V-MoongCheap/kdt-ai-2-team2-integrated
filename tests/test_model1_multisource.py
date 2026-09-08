@@ -61,8 +61,8 @@ def test_reasoned_output_keeps_reason_and_source_type():
                 "facet_id_candidate": "product_form",
                 "name": "Product Form",
                 "definition": "제형",
-                "reason": "상품 데이터와 판매 공고에서 반복되어 구매 비교에 사용할 수 있습니다.",
-                "values": [{"value": "캡슐", "aliases": []}],
+                "selection_reason": "제형이 달라지면 섭취 편의성과 상품 비교 기준이 달라집니다.",
+                "values": [{"value": "캡슐", "aliases": [], "value_reason": "캡슐 형태의 제품을 뜻합니다."}],
                 "evidence": [{"source_product_id": "mfds:p1", "source_field": "product_form", "source_text": "캡슐"}],
             }
         ],
@@ -72,6 +72,8 @@ def test_reasoned_output_keeps_reason_and_source_type():
 
     assert not failures
     assert parsed.iloc[0]["reason_status"] == "PRESENT"
+    assert parsed.iloc[0]["selection_reason"].startswith("제형이")
+    assert parsed.iloc[0]["value_reason"].startswith("캡슐")
     assert parsed.iloc[0]["evidence_source_type"] == "MFDS_PRODUCT"
 
 
@@ -84,8 +86,8 @@ def test_selection_requires_model_and_source_consensus():
                 {
                     "name": "Product Form",
                     "definition": "제형",
-                    "reason": "반복 관찰",
-                    "values": [{"value": "캡슐", "aliases": []}],
+                    "selection_reason": "제형이 비교 기준이 됩니다.",
+                    "values": [{"value": "캡슐", "aliases": [], "value_reason": "캡슐 형태"}],
                     "evidence": [{"source_product_id": "mfds:p1", "source_field": "product_form", "source_text": "캡슐"}],
                 }
             ],
@@ -99,3 +101,13 @@ def test_selection_requires_model_and_source_consensus():
     assert selected.iloc[0]["selection_status"] == "SELECTED_CANDIDATE"
     assert selected.iloc[0]["model_support"] == 2
     assert selected.iloc[0]["source_type_count"] == 2
+
+
+def test_malformed_facet_item_is_recorded_as_schema_failure():
+    parsed, failures = MODULE.parse_reasoned_output(
+        {"category_key": "health-functional-food:probiotics", "facets": ["malformed"]},
+        _input_frame(),
+    )
+
+    assert parsed.empty
+    assert failures[0]["failure_type"] == "SCHEMA_VALIDATION_FAILED"

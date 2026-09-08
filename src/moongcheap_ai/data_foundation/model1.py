@@ -148,7 +148,7 @@ def parse_model_output(payload: Any, input_products: pd.DataFrame) -> tuple[pd.D
                 for value in values:
                     rows.append({"category_key": category_key, "category_name": category_name, "facet_id_candidate": facet.get("facet_id_candidate", ""), "name": name, "definition": facet.get("definition", ""), "value": value.get("value", ""), "alias": "|".join(value.get("aliases") or []), "source_product_id": source_id, "source_field": source_field, "source_text": source_text, "status": "PROVISIONAL_MODEL_OUTPUT"})
         return pd.DataFrame(rows, columns=MODEL_OUTPUT_COLUMNS), failures
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError) as exc:
         failures.append({"failure_type": "SCHEMA_VALIDATION_FAILED", "detail": str(exc)})
         return pd.DataFrame(columns=MODEL_OUTPUT_COLUMNS), failures
 

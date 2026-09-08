@@ -42,6 +42,12 @@ def _normalize(value: Any) -> str:
     return re.sub(r"\s+", " ", _text(value).casefold())
 
 
+def _clean_output_text(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.encode("utf-8", "replace").decode("utf-8")
+    return value
+
+
 def _empty_sources() -> pd.DataFrame:
     return pd.DataFrame(columns=SOURCE_COLUMNS)
 
@@ -188,11 +194,18 @@ def parse_reasoned_output(payload: dict[str, Any], input_frame: pd.DataFrame) ->
     parsed, failures = parse_model_output(payload, input_frame)
     if parsed.empty:
         return parsed, failures
-    reasons = {str(item.get("name", "")): _text(item.get("reason")) for item in payload.get("facets", [])}
+    reasons = {str(item.get("name", "")): _text(item.get("selection_reason") or item.get("reason")) for item in payload.get("facets", [])}
+    value_reasons = {
+        (str(item.get("name", "")), str(value.get("value", ""))): _text(value.get("value_reason"))
+        for item in payload.get("facets", [])
+        for value in item.get("values", [])
+    }
     source_types = dict(zip(input_frame["source_product_id"].astype(str), input_frame["source_type"].astype(str)))
-    parsed["reason"] = parsed["name"].map(reasons).fillna("")
+    parsed["selection_reason"] = parsed["name"].map(reasons).fillna("")
+    parsed["value_reason"] = [value_reasons.get((str(name), str(value)), "") for name, value in zip(parsed["name"], parsed["value"])]
+    parsed["reason"] = parsed["selection_reason"]
     parsed["evidence_source_type"] = parsed["source_product_id"].map(source_types).fillna("")
-    parsed["reason_status"] = parsed["reason"].map(lambda value: "PRESENT" if value else "MISSING")
+    parsed["reason_status"] = parsed["selection_reason"].map(lambda value: "PRESENT" if value else "MISSING")
     return parsed, failures
 
 
@@ -243,7 +256,7 @@ def main() -> None:
     parser.add_argument("--boards", type=Path, default=Path(r"F:\downloadF\demand_board_snapshot_5000.json"))
     parser.add_argument("--queries", type=Path, default=Path("data/interim/facet_evidence/kuaiseach_health_queries_ko_reviewed_v27.parquet"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed/model1_multisource_v1"))
-    parser.add_argument("--models", default="qwen3:4b,gemma3:4b,llama3.2:3b,exaone3.5:2.4b-instruct-q4_K_M")
+    parser.add_argument("--models", default="qwen3:4b,gemma3:4b,llama3.2:3b,exaone3.5:2.4b-instruct-q4_K_M,phi4-mini")
     parser.add_argument("--smoke-only", action="store_true")
     parser.add_argument("--retries", type=int, default=0)
     args = parser.parse_args()
@@ -256,8 +269,12 @@ def main() -> None:
         raw, candidates, report, model_failures = run_model(model_name, data, categories, args.retries)
         all_raw.extend(raw); all_candidates.extend(candidates); model_reports.append(report); failures.extend(model_failures)
     candidate_frame = pd.DataFrame(all_candidates)
+    if not candidate_frame.empty:
+        for column in candidate_frame.columns:
+            candidate_frame[column] = candidate_frame[column].map(_clean_output_text)
     selected = select_candidates(candidate_frame)
-    pd.DataFrame(all_raw).to_json(args.output_dir / "multisource_model_raw_v1.jsonl", orient="records", lines=True, force_ascii=False)
+    raw_path = args.output_dir / "multisource_model_raw_v1.jsonl"
+    raw_path.write_text("\n".join(json.dumps(row, ensure_ascii=True) for row in all_raw) + "\n", encoding="utf-8")
     candidate_frame.to_csv(args.output_dir / "multisource_model_candidates_v1.csv", index=False, encoding="utf-8-sig")
     selected.to_csv(args.output_dir / "multisource_selected_candidates_v1.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(failures).to_csv(args.output_dir / "multisource_model_failures_v1.csv", index=False, encoding="utf-8-sig")
@@ -268,7 +285,7 @@ def main() -> None:
     lines.extend(f"| {key} | {value:,} |" for key, value in sorted(source_counts.items()))
     lines += ["", "## 모델별 실행", "", "| 모델 | 호출 | 후보 | 실패 | 실행 시간(초) |", "|---|---:|---:|---:|---:|"]
     lines.extend(f"| {item['model']} | {item['calls']} | {item['candidate_rows']} | {item['failure_rows']} | {item['runtime_seconds']} |" for item in model_reports)
-    lines += ["", "## 해석", "", "Facet reason은 모델이 해당 후보를 제안한 근거를 요약한 값입니다. 모델 합의와 복수 출처 근거가 있는 후보만 SELECTED_CANDIDATE로 표시하고, 나머지는 REVIEW_ONLY로 남깁니다.", "", "합성 구매 요청과 수요 보드의 가격·시간·참여자 수는 실제 사용자 행동으로 해석하지 않습니다."]
+    lines += ["", "## 해석", "", "selection_reason은 이 Facet이 상품 비교, 구매 요청 라벨링, 판매자 매칭에 왜 필요한지를 설명합니다. value_reason은 각 값이 비교나 매칭에서 무엇을 의미하는지 설명합니다.", "", "모델 합의와 복수 출처 근거가 있는 후보만 SELECTED_CANDIDATE로 표시하고, 나머지는 REVIEW_ONLY로 남깁니다.", "", "합성 구매 요청과 수요 보드의 가격·시간·참여자 수는 실제 사용자 행동으로 해석하지 않습니다."]
     (args.output_dir / "multisource_facet_discovery_report_v1.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(report)
 

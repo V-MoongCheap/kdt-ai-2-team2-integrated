@@ -9,7 +9,7 @@ The input contains evidence from several source types. Treat each source accordi
 
 Discover candidate facets that can distinguish products or express a purchase condition. Use only values supported by the input. A facet may be a product facet (form, ingredient, intake), a purchase condition (price band, MOQ, delivery), or a consumer preference. Do not turn a regulated function sentence into a final preference value. Do not treat synthetic price, time, or board counts as real-world behavior.
 
-Return JSON only. Every evidence source_product_id and source_text must occur in the input. Each facet must include a concise reason explaining why the facet is useful and which source types support it. Keep values normalized and short; do not copy a long source sentence as a value.
+Return JSON only. Every evidence source_product_id and source_text must occur in the input. Each facet must include a concise selection_reason answering: "Why should this Facet exist for product comparison, purchase-request labeling, or seller matching?" Explain the distinction or decision it enables. Do not merely say that a source contains the value. Each value should also include a short value_reason explaining what that value means for comparison or matching. Keep values normalized and short; do not copy a long source sentence as a value.
 
 Required JSON shape:
 {
@@ -20,8 +20,8 @@ Required JSON shape:
       "facet_id_candidate": "...",
       "name": "...",
       "definition": "...",
-      "reason": "...",
-      "values": [{"value": "...", "aliases": []}],
+      "selection_reason": "...",
+      "values": [{"value": "...", "aliases": [], "value_reason": "..."}],
       "evidence": [
         {"source_product_id": "...", "source_field": "...", "source_text": "..."}
       ]
