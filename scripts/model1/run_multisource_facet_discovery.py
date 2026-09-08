@@ -209,6 +209,44 @@ def parse_reasoned_output(payload: dict[str, Any], input_frame: pd.DataFrame) ->
     return parsed, failures
 
 
+def add_data_selection_reason(candidates: pd.DataFrame, input_data: pd.DataFrame) -> pd.DataFrame:
+    if candidates.empty:
+        return candidates
+    result = candidates.copy()
+    text_columns = ["product_name", "product_form", "functional_ingredients", "regulated_function", "intake_method", "price_text", "quantity_text", "seller_condition", "evidence_text"]
+    source_counts = input_data.groupby(["category_key", "source_type"])["source_product_id"].nunique().to_dict()
+    category_counts = input_data.groupby("category_key")["source_product_id"].nunique().to_dict()
+    observed_cache: dict[tuple[str, str, str], tuple[int, list[str]]] = {}
+    for key, group in result.groupby(["model", "category_key", "name", "value"], dropna=False):
+        model, category_key, facet_name, value = key
+        value_norm = _normalize(value)
+        category_rows = input_data[input_data["category_key"].eq(category_key)]
+        mask = category_rows[text_columns].astype(str).apply(lambda column: column.map(_normalize).str.contains(re.escape(value_norm), regex=True, na=False)).any(axis=1) if value_norm else pd.Series(False, index=category_rows.index)
+        observed = category_rows[mask]
+        observed_types = sorted(observed["source_type"].drop_duplicates().tolist())
+        observed_cache[key] = (len(observed), observed_types)
+    reasons = []
+    observed_rows = []
+    observed_type_counts = []
+    observed_types_text = []
+    for row in result.itertuples():
+        key = (row.model, row.category_key, row.name, row.value)
+        count, types = observed_cache[key]
+        evidence_type = _text(row.evidence_source_type)
+        model_evidence = result[(result["model"].eq(row.model)) & (result["category_key"].eq(row.category_key)) & (result["name"].eq(row.name)) & (result["value"].eq(row.value))]
+        evidence_count = model_evidence["source_product_id"].nunique()
+        source_text = ", ".join(f"{item}: {int(source_counts.get((row.category_key, item), 0))}건" for item in types)
+        reasons.append(f"{row.model}의 {row.category_key} 후보. 입력 {int(category_counts.get(row.category_key, 0))}건 중 값과 일치하는 행 {count}건; 관찰 출처 {source_text or evidence_type or '없음'}; 모델 근거 {evidence_count}건.")
+        observed_rows.append(count)
+        observed_type_counts.append(len(types))
+        observed_types_text.append("|".join(types))
+    result["observed_row_count"] = observed_rows
+    result["observed_source_type_count"] = observed_type_counts
+    result["observed_source_types"] = observed_types_text
+    result["data_selection_reason"] = reasons
+    return result
+
+
 def select_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
     if candidates.empty:
         return candidates
@@ -272,6 +310,7 @@ def main() -> None:
     if not candidate_frame.empty:
         for column in candidate_frame.columns:
             candidate_frame[column] = candidate_frame[column].map(_clean_output_text)
+    candidate_frame = add_data_selection_reason(candidate_frame, data)
     selected = select_candidates(candidate_frame)
     raw_path = args.output_dir / "multisource_model_raw_v1.jsonl"
     raw_path.write_text("\n".join(json.dumps(row, ensure_ascii=True) for row in all_raw) + "\n", encoding="utf-8")
@@ -279,7 +318,7 @@ def main() -> None:
     reason_columns = [
         "model", "category_key", "category_name", "name", "value",
         "selection_reason", "value_reason", "source_product_id",
-        "source_field", "source_text", "evidence_source_type", "reason_status",
+        "source_field", "source_text", "evidence_source_type", "reason_status", "observed_row_count", "observed_source_type_count", "observed_source_types", "data_selection_reason",
     ]
     candidate_frame.reindex(columns=reason_columns, fill_value="").sort_values(
         ["model", "category_key", "name", "value"]
@@ -295,10 +334,10 @@ def main() -> None:
     lines.extend(f"| {item['model']} | {item['calls']} | {item['candidate_rows']} | {item['failure_rows']} | {item['runtime_seconds']} |" for item in model_reports)
     lines += ["", "## 모델별 선정 이유", "", "아래 이유는 모델별 원본 후보 설명입니다. 모델 간 공통 후보가 아니어도 각 모델의 판단을 비교할 수 있습니다."]
     for model_name, group in candidate_frame.groupby("model", sort=True):
-        lines += ["", f"### {model_name}", "", "| Category | Facet | Value | Facet을 고른 이유 | 값의 의미 |", "|---|---|---|---|---|"]
+        lines += ["", f"### {model_name}", "", "| Category | Facet | Value | 실제 데이터 관찰 요약 | 모델 설명 | 값의 의미 |", "|---|---|---|---|---|---|"]
         for row in group.head(20).itertuples():
-            lines.append(f"| {row.category_key} | {row.name} | {row.value} | {row.selection_reason} | {row.value_reason} |")
-    lines += ["", "## 해석", "", "selection_reason은 이 Facet이 상품 비교, 구매 요청 라벨링, 판매자 매칭에 왜 필요한지를 설명합니다. value_reason은 각 값이 비교나 매칭에서 무엇을 의미하는지 설명합니다.", "", "모델 합의와 복수 출처 근거가 있는 후보만 SELECTED_CANDIDATE로 표시하고, 나머지는 REVIEW_ONLY로 남깁니다.", "", "합성 구매 요청과 수요 보드의 가격·시간·참여자 수는 실제 사용자 행동으로 해석하지 않습니다."]
+            lines.append(f"| {row.category_key} | {row.name} | {row.value} | {row.data_selection_reason} | {row.selection_reason} | {row.value_reason} |")
+    lines += ["", "## 해석", "", "data_selection_reason은 모델별 후보가 실제 입력 Category에서 몇 건 관찰됐고 어떤 출처 유형에 분포하는지 계산한 설명입니다. selection_reason과 value_reason은 모델이 반환한 보조 설명입니다.", "", "합성 구매 요청과 수요 보드의 가격·시간·참여자 수는 실제 사용자 행동으로 해석하지 않습니다."]
     (args.output_dir / "multisource_facet_discovery_report_v1.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(report)
 

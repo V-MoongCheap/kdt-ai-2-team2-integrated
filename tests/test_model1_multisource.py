@@ -86,7 +86,7 @@ def test_selection_requires_model_and_source_consensus():
                 {
                     "name": "Product Form",
                     "definition": "제형",
-                    "selection_reason": "제형이 비교 기준이 됩니다.",
+                    "selection_reason": "제형이 달라지면 섭취 편의성과 상품 비교 기준이 달라집니다.",
                     "values": [{"value": "캡슐", "aliases": [], "value_reason": "캡슐 형태"}],
                     "evidence": [{"source_product_id": "mfds:p1", "source_field": "product_form", "source_text": "캡슐"}],
                 }
@@ -111,3 +111,26 @@ def test_malformed_facet_item_is_recorded_as_schema_failure():
 
     assert parsed.empty
     assert failures[0]["failure_type"] == "SCHEMA_VALIDATION_FAILED"
+
+
+def test_data_selection_reason_reports_observed_rows_and_sources():
+    payload = {
+        "category_key": "health-functional-food:probiotics",
+        "category_name": "유산균·프로바이오틱스",
+        "facets": [
+            {
+                "name": "Product Form",
+                "selection_reason": "입력 상품과 판매 공고에서 관찰됨",
+                "values": [{"value": "캡슐", "aliases": [], "value_reason": "캡슐 제품"}],
+                "evidence": [{"source_product_id": "mfds:p1", "source_field": "product_form", "source_text": "캡슐"}],
+            }
+        ],
+    }
+    parsed, _ = MODULE.parse_reasoned_output(payload, _input_frame())
+    parsed["model"] = "qwen3:4b"
+
+    result = MODULE.add_data_selection_reason(parsed, _input_frame())
+
+    assert result.iloc[0]["observed_row_count"] == 2
+    assert result.iloc[0]["observed_source_type_count"] == 2
+    assert "MFDS_PRODUCT" in result.iloc[0]["data_selection_reason"]
