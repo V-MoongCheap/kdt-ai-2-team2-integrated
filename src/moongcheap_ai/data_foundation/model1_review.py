@@ -101,6 +101,26 @@ def normalize_review_candidates(reviewed: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def collapse_same_model_candidates(normalized: pd.DataFrame) -> pd.DataFrame:
+    """Collapse repeated evidence rows while retaining all source product IDs."""
+    if normalized.empty:
+        return normalized
+    group_columns = ["model", "category_key", "canonical_facet_id", "normalized_atom"]
+    rows: list[dict[str, Any]] = []
+    for _, group in normalized.fillna("").groupby(group_columns, dropna=False, sort=True):
+        row = group.iloc[0].to_dict()
+        product_ids = sorted({str(value) for value in group["source_product_id"].astype(str) if str(value)})
+        for column in ("source_text", "source_field", "evidence_source_type", "review_reasons"):
+            values = sorted({str(value) for value in group[column].astype(str) if str(value)}) if column in group else []
+            row[column] = " | ".join(values)
+        row["source_product_id"] = " | ".join(product_ids)
+        row["source_product_ids"] = row["source_product_id"]
+        row["candidate_row_count"] = int(len(group))
+        row["evidence_product_count"] = int(len(product_ids))
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def write_review_artifacts(candidates_path: Path, input_path: Path, output_dir: Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     reviewed = review_candidates(pd.read_csv(candidates_path).fillna(""), pd.read_json(input_path, lines=True).fillna(""))

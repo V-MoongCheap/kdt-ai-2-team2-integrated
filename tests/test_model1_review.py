@@ -1,6 +1,6 @@
 import pandas as pd
 
-from moongcheap_ai.data_foundation.model1_review import normalize_review_candidates, review_candidates
+from moongcheap_ai.data_foundation.model1_review import collapse_same_model_candidates, normalize_review_candidates, review_candidates
 
 
 def _inputs() -> pd.DataFrame:
@@ -80,3 +80,14 @@ def test_intake_is_split_into_structured_fields():
     normalized = normalize_review_candidates(reviewed)
     assert normalized.iloc[0].intake_days == "1"
     assert normalized.iloc[0].intake_frequency == "2"
+
+
+def test_same_model_value_collapses_and_keeps_product_ids():
+    reviewed = review_candidates(_candidate("Product Form", "분말", "분말"), _inputs())
+    reviewed["model"] = "qwen3:4b"
+    reviewed = pd.concat([reviewed, reviewed.copy()], ignore_index=True)
+    normalized = collapse_same_model_candidates(normalize_review_candidates(reviewed))
+    assert len(normalized) == 1
+    assert normalized.iloc[0].candidate_row_count == 2
+    assert normalized.iloc[0].evidence_product_count == 1
+    assert normalized.iloc[0].source_product_ids == "p1"

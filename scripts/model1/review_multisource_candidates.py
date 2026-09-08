@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from moongcheap_ai.data_foundation.model1_review import normalize_review_candidates, write_review_artifacts
+from moongcheap_ai.data_foundation.model1_review import collapse_same_model_candidates, normalize_review_candidates, write_review_artifacts
 
 
 def main() -> None:
@@ -22,6 +22,7 @@ def main() -> None:
     else:
         result = {"rows": len(pd.read_csv(reviewed_path)), "status_counts": "reused_existing_review"}
     normalized = normalize_review_candidates(pd.read_csv(reviewed_path).fillna(""))
+    normalized = collapse_same_model_candidates(normalized)
     demand_constraints = normalized[normalized["canonical_facet_id"].eq("price_band")].copy()
     demand_constraints["finalization_status"] = "DEMAND_CONDITION"
     demand_constraints.to_csv(args.output_dir / "multisource_demand_constraints_v1.csv", index=False, encoding="utf-8-sig")
