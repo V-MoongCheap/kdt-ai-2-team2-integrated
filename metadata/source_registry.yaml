@@ -1,0 +1,47 @@
+version: 1
+sources:
+  - source_id: esthermall_goodsreview
+    source_name: 에스더몰 고객리뷰
+    provider: 에스더포뮬러
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://m.esthermall.co.kr/board/list.php?bdId=goodsreview
+    acquisition_method: PUBLIC_PAGE_ONLY
+    access_status: BLOCKED_AUTOMATION
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_BY_TERMS
+    internal_analysis_status: CONDITIONAL
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-08
+    raw_path: data/raw/reviews/esthermall/
+    notes: 자동 수집 금지 및 무단 자료 수집 제한 약관으로 Pilot 미실행.
+  - source_id: foodpolis_retail_sales
+    source_name: 식품정보24 소매채널 판매정보
+    provider: 한국식품산업클러스터진흥원
+    source_type: KOREAN_HFF_RETAIL_SALES
+    source_url: https://www.foodpolis.kr/food24/fo/main.do
+    acquisition_method: MANUAL_DASHBOARD_EXPORT
+    access_status: READY_MANUAL_DOWNLOAD
+    cost: UNKNOWN
+    login_required: likely
+    automated_collection_status: NOT_APPLICABLE
+    internal_analysis_status: CONDITIONAL
+    redistribution_status: UNKNOWN
+    retrieved_at: 2026-09-08
+    raw_path: data/raw/purchase/foodpolis/
+    notes: 공식 Export 파일 대기.
+  - source_id: lgu_uplus_hff_2021_12
+    source_name: 건강기능식품 융합데이터 시장지표 21년 12월
+    provider: LG U+
+    source_type: KOREAN_HFF_PURCHASE_AGGREGATE
+    source_url: null
+    acquisition_method: MANUAL_DOWNLOAD_IF_OFFICIAL_FREE_EXPORT
+    access_status: MISSING_VALID_SOURCE
+    cost: FREE_ONLY
+    login_required: unknown
+    automated_collection_status: NOT_APPLICABLE
+    internal_analysis_status: CONDITIONAL
+    redistribution_status: UNKNOWN
+    retrieved_at: 2026-09-08
+    raw_path: data/raw/purchase/lg_uplus/
+    notes: 공식 다운로드 URL과 로컬 파일 미확인.
