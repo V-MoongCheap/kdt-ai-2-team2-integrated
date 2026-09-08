@@ -1,6 +1,6 @@
 import pandas as pd
 
-from moongcheap_ai.data_foundation.model1_review import review_candidates
+from moongcheap_ai.data_foundation.model1_review import normalize_review_candidates, review_candidates
 
 
 def _inputs() -> pd.DataFrame:
@@ -63,3 +63,20 @@ def test_price_is_demand_scope_and_not_product_facet():
     result = review_candidates(_candidate("Price Band", "UNDER_10000", "UNDER_10000"), _inputs())
     assert result.iloc[0].review_scope == "DEMAND"
     assert result.iloc[0].review_status == "REVIEW_REQUIRED"
+
+
+def test_ingredient_recognition_number_is_separated():
+    reviewed = review_candidates(
+        _candidate("Functional Ingredients", "AP \ucf5c\ub77c\uac94 \ud6a8\uc18c\ubd84\ud574 \ud3a9\ud0c0\uc774\ub4dc(\uae30\ub2a5\uc131\uc6d0\ub8cc\uc778\uc815\uc81c2010-25\ud638)", "AP \ucf5c\ub77c\uac94"),
+        _inputs(),
+    )
+    normalized = normalize_review_candidates(reviewed)
+    assert normalized.iloc[0].recognition_number == "2010-25"
+    assert "2010-25" not in normalized.iloc[0].normalized_atom
+
+
+def test_intake_is_split_into_structured_fields():
+    reviewed = review_candidates(_candidate("Intake Method", "1일 2회", "1일 2회"), _inputs())
+    normalized = normalize_review_candidates(reviewed)
+    assert normalized.iloc[0].intake_days == "1"
+    assert normalized.iloc[0].intake_frequency == "2"

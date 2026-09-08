@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from moongcheap_ai.data_foundation.model1_review import write_review_artifacts
+import pandas as pd
+
+from moongcheap_ai.data_foundation.model1_review import normalize_review_candidates, write_review_artifacts
 
 
 def main() -> None:
@@ -12,8 +14,28 @@ def main() -> None:
     parser.add_argument("--candidates", type=Path, default=Path("data/processed/model1_multisource_v1/multisource_model_candidates_v1.csv"))
     parser.add_argument("--input", type=Path, default=Path("data/processed/model1_multisource_v1/multisource_model_input_v1.jsonl"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed/model1_multisource_v1"))
+    parser.add_argument("--refresh-review", action="store_true", help="rebuild the review CSV; otherwise reuse an existing open review file")
     args = parser.parse_args()
-    print(write_review_artifacts(args.candidates, args.input, args.output_dir))
+    reviewed_path = args.output_dir / "multisource_candidate_review_v1.csv"
+    if args.refresh_review or not reviewed_path.exists():
+        result = write_review_artifacts(args.candidates, args.input, args.output_dir)
+    else:
+        result = {"rows": len(pd.read_csv(reviewed_path)), "status_counts": "reused_existing_review"}
+    normalized = normalize_review_candidates(pd.read_csv(reviewed_path).fillna(""))
+    normalized.to_csv(args.output_dir / "multisource_candidate_normalized_v1.csv", index=False, encoding="utf-8-sig")
+    lines = [
+        "# Multi-source Facet 후보 정규화 V1", "",
+        "검토 후보를 비교·검토 가능한 원자 값과 구조화 필드로 분리한 산출물이다.",
+        "정규화는 후보를 자동 확정하지 않으며 `finalization_status`를 함께 확인해야 한다.", "",
+        "## 주요 상태", "",
+        "- `ACCEPT_CANDIDATE`: 기본 검토 게이트를 통과한 후보",
+        "- `REVIEW_REQUIRED`: 정규화됐지만 사람 검토가 필요한 후보",
+        "- `EVIDENCE_ONLY`: MFDS 규제 기능 원문으로만 보존할 후보",
+        "- `REJECT`: 범위 이탈 또는 근거 부족으로 제외할 후보", "",
+        f"총 정규화 행: {len(normalized):,}"
+    ]
+    (args.output_dir / "multisource_candidate_normalized_v1.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(result | {"normalized_rows": len(normalized)})
 
 
 if __name__ == "__main__":
