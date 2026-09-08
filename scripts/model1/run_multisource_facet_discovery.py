@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -14,7 +15,7 @@ import pandas as pd
 from moongcheap_ai.data_foundation.model1 import (
     MODEL_OUTPUT_COLUMNS,
     ModelCallError,
-    OllamaAdapter,
+    create_model_adapter,
     parse_model_output,
     sample_products,
 )
@@ -262,8 +263,8 @@ def select_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).drop(columns=["facet_norm", "value_norm"], errors="ignore").reset_index(drop=True)
 
 
-def run_model(model_name: str, data: pd.DataFrame, categories: set[str], retries: int) -> tuple[list[dict], list[dict], dict, list[dict]]:
-    adapter = OllamaAdapter(model_name, prompt_path=PROMPT_PATH)
+def run_model(model_name: str, data: pd.DataFrame, categories: set[str], retries: int, provider: str = "ollama", endpoint: str = "", api_key: str = "") -> tuple[list[dict], list[dict], dict, list[dict]]:
+    adapter = create_model_adapter(provider, model_name, endpoint=endpoint, api_key=api_key, prompt_path=PROMPT_PATH)
     raw, candidates, failures = [], [], []
     started = time.perf_counter()
     calls = 0
@@ -282,7 +283,7 @@ def run_model(model_name: str, data: pd.DataFrame, categories: set[str], retries
             except ModelCallError as exc:
                 calls += 1
                 failures.append({"failure_type": "MODEL_CALL_FAILED", "detail": str(exc), "model": model_name, "category_key": category_key})
-    report = {"model": model_name, "calls": calls, "candidate_rows": len(candidates), "failure_rows": len(failures), "runtime_seconds": round(time.perf_counter() - started, 3)}
+    report = {"provider": adapter.provider, "model": model_name, "calls": calls, "candidate_rows": len(candidates), "failure_rows": len(failures), "runtime_seconds": round(time.perf_counter() - started, 3)}
     return raw, candidates, report, failures
 
 
@@ -295,16 +296,20 @@ def main() -> None:
     parser.add_argument("--queries", type=Path, default=Path("data/interim/facet_evidence/kuaiseach_health_queries_ko_reviewed_v27.parquet"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed/model1_multisource_v1"))
     parser.add_argument("--models", default="qwen3:4b,gemma3:4b,llama3.2:3b,exaone3.5:2.4b-instruct-q4_K_M,phi4-mini")
+    parser.add_argument("--provider", default="ollama", choices=["ollama", "transformers", "huggingface", "openai", "openai_compatible", "vllm", "lm_studio"])
+    parser.add_argument("--endpoint", default="")
+    parser.add_argument("--api-key-env", default="")
     parser.add_argument("--smoke-only", action="store_true")
     parser.add_argument("--retries", type=int, default=0)
     args = parser.parse_args()
+    api_key = os.getenv(args.api_key_env, "") if args.api_key_env else ""
     args.output_dir.mkdir(parents=True, exist_ok=True)
     data = build_multisource_input({"products": args.products, "sellers": args.sellers, "demands": args.demands, "boards": args.boards, "queries": args.queries})
     data.to_json(args.output_dir / "multisource_model_input_v1.jsonl", orient="records", lines=True, force_ascii=False)
     categories = CATEGORY_KEYS if args.smoke_only else set(data["category_key"].unique())
     all_raw, all_candidates, model_reports, failures = [], [], [], []
     for model_name in [item.strip() for item in args.models.split(",") if item.strip()]:
-        raw, candidates, report, model_failures = run_model(model_name, data, categories, args.retries)
+        raw, candidates, report, model_failures = run_model(model_name, data, categories, args.retries, provider=args.provider, endpoint=args.endpoint, api_key=api_key)
         all_raw.extend(raw); all_candidates.extend(candidates); model_reports.append(report); failures.extend(model_failures)
     candidate_frame = pd.DataFrame(all_candidates)
     if not candidate_frame.empty:
