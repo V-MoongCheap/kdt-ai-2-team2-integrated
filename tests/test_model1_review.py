@@ -1,6 +1,6 @@
 import pandas as pd
 
-from moongcheap_ai.data_foundation.model1_review import collapse_same_model_candidates, normalize_review_candidates, review_candidates
+from moongcheap_ai.data_foundation.model1_review import collapse_same_model_candidates, display_category_name, normalize_review_candidates, review_candidates
 
 
 def _inputs() -> pd.DataFrame:
@@ -91,3 +91,15 @@ def test_same_model_value_collapses_and_keeps_product_ids():
     assert normalized.iloc[0].candidate_row_count == 2
     assert normalized.iloc[0].evidence_product_count == 1
     assert normalized.iloc[0].source_product_ids == "p1"
+
+
+def test_category_display_name_comes_from_stable_key():
+    expected = "".join(chr(int(value, 16)) for value in ("d53c", "bd80", "00b7", "cf5c", "b77c", "ac94"))
+    assert display_category_name("health-functional-food:skin_collagen") == expected
+
+
+def test_pill_form_is_normalized_without_auto_approval():
+    reviewed = review_candidates(_candidate("Product Form", "환", "환"), _inputs())
+    normalized = normalize_review_candidates(reviewed)
+    assert normalized.iloc[0].normalized_atom == "pill"
+    assert normalized.iloc[0].review_status == "REJECT"

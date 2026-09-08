@@ -22,6 +22,12 @@ FACET_MAP = {
     "consumer preference": ("consumer_preference", "DEMAND_SIGNAL"), "purchase intent": ("purchase_intent", "DEMAND_SIGNAL"),
 }
 FORM_MAP = {"powder": "powder", _u("\ubd84\ub9d0"): "powder", "tablet": "tablet", _u("\uc815"): "tablet", _u("\uc815\uc81c"): "tablet", "capsule": "capsule", _u("\ucea1\uc290"): "capsule", "liquid": "liquid", _u("\uc561\uc0c1"): "liquid", "stick": "stick", _u("\uc2a4\ud2f1"): "stick"}
+FORM_MAP[_u("\ud658")] = "pill"
+CATEGORY_NAMES = {
+    "health-functional-food:vitamin_mineral": _u("\ube44\ud0c0\ubbfc\u00b7\ubbf8\ub124\ub784"),
+    "health-functional-food:probiotics": _u("\uc720\uc0b0\uade0\u00b7\ud504\ub85c\ubc14\uc774\uc624\ud2f1\uc2a4"),
+    "health-functional-food:skin_collagen": _u("\ud53c\ubd80\u00b7\ucf5c\ub77c\uac94"),
+}
 OUT_OF_SCOPE = tuple(_u(value) for value in ("\uc57d", "\uc758\uc57d", "\uce58\ub8cc", "\uc9c8\ud658", "\ucc98\ubc29", "\uc54c\ub808\ub974\uae30", "\ud558\uc774\ub4dc\ub85c\uac94", "\uc5d0\uc13c\uc2a4")) + ("medicine", "drug", "treatment", "cosmetic")
 RAW_SENTENCE_MARKERS = tuple(_u(value) for value in ("\ub3c4\uc6c0\uc744 \uc904", "\uc720\uc9c0\ud558\ub294\ub370", "\uac00\uc7a5 \uc88b\uc740", "\ud544\uc694", "\ucd94\ucc9c"))
 RECOGNITION_NUMBER_RE = re.compile(r"(?:\uae30\ub2a5\uc131\uc6d0\ub8cc\uc778\uc815\uc81c|\uc778\uc815\uc81c|\uc0dd\ub9ac\ud65c\uc131\uae30\ub2a5\s*)?(\d{4})\s*[-\u2013]\s*(\d+)\s*\ud638?", re.I)
@@ -31,6 +37,11 @@ PRICE_RE = re.compile(r"^(?:UNDER_(\d+)|OVER_(\d+)|(\d+)_TO_(\d+))$", re.I)
 
 def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(value or ""))).strip().casefold()
+
+
+def display_category_name(category_key: Any, fallback: Any = "") -> str:
+    key = str(category_key or "").strip()
+    return CATEGORY_NAMES.get(key, str(fallback or key))
 
 
 def normalize_value(facet_id: str, value: Any) -> str:
