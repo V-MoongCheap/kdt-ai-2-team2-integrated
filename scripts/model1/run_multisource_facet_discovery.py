@@ -333,7 +333,7 @@ def main() -> None:
     lines += ["", "## 모델별 실행", "", "| 모델 | 호출 | 후보 | 실패 | 실행 시간(초) |", "|---|---:|---:|---:|---:|"]
     lines.extend(f"| {item['model']} | {item['calls']} | {item['candidate_rows']} | {item['failure_rows']} | {item['runtime_seconds']} |" for item in model_reports)
     lines += ["", "## 모델별 선정 이유", "", "아래 이유는 모델별 원본 후보 설명입니다. 모델 간 공통 후보가 아니어도 각 모델의 판단을 비교할 수 있습니다."]
-    for model_name, group in candidate_frame.groupby("model", sort=True):
+    for model_name, group in candidate_frame.groupby("model", sort=True) if "model" in candidate_frame.columns else []:
         lines += ["", f"### {model_name}", "", "| Category | Facet | Value | 실제 데이터 관찰 요약 | 모델 설명 | 값의 의미 |", "|---|---|---|---|---|---|"]
         for row in group.head(20).itertuples():
             lines.append(f"| {row.category_key} | {row.name} | {row.value} | {row.data_selection_reason} | {row.selection_reason} | {row.value_reason} |")
