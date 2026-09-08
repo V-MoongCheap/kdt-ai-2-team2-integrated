@@ -51,6 +51,7 @@ def normalize_value(facet_id: str, value: Any) -> str:
     if facet_id == "functional_ingredients":
         text = re.sub(r"\s*\((?:" + _u("\ub610\ub294") + r"|or)\s*[^)]*\)", "", text, flags=re.I)
         text = re.sub(r"\s*\([^)]*(?:" + _u("\uae30\ub2a5\uc131") + r"|" + _u("\uc0dd\ub9ac\ud65c\uc131") + r")[^)]*\)", "", text, flags=re.I)
+        text = re.sub(r"\s*\([^)]*\d{4}\s*[-\u2013]\s*\d+\s*\ud638?[^)]*\)", "", text, flags=re.I)
     if facet_id == "regulated_function":
         text = re.sub(r"\s*\([^)]*\)", "", text)
     return text

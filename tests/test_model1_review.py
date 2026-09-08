@@ -75,6 +75,14 @@ def test_ingredient_recognition_number_is_separated():
     assert "2010-25" not in normalized.iloc[0].normalized_atom
 
 
+def test_ingredient_recognition_parenthesis_is_not_a_facet_value():
+    value = "Collactive \ucf5c\ub77c\uac94\ud3a9\ud0c0\uc774\ub4dc(\uc81c2012-24\ud638)"
+    reviewed = review_candidates(_candidate("Functional Ingredients", value, "Collactive"), _inputs())
+    normalized = normalize_review_candidates(reviewed)
+    assert "2012-24" not in normalized.iloc[0].normalized_atom
+    assert normalized.iloc[0].recognition_number == "2012-24"
+
+
 def test_intake_is_split_into_structured_fields():
     reviewed = review_candidates(_candidate("Intake Method", "1일 2회", "1일 2회"), _inputs())
     normalized = normalize_review_candidates(reviewed)
