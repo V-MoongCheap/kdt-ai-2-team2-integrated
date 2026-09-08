@@ -22,7 +22,16 @@ def main() -> None:
     else:
         result = {"rows": len(pd.read_csv(reviewed_path)), "status_counts": "reused_existing_review"}
     normalized = normalize_review_candidates(pd.read_csv(reviewed_path).fillna(""))
-    normalized.to_csv(args.output_dir / "multisource_candidate_normalized_v1.csv", index=False, encoding="utf-8-sig")
+    demand_constraints = normalized[normalized["canonical_facet_id"].eq("price_band")].copy()
+    demand_constraints["finalization_status"] = "DEMAND_CONDITION"
+    demand_constraints.to_csv(args.output_dir / "multisource_demand_constraints_v1.csv", index=False, encoding="utf-8-sig")
+    facet_normalized = normalized[~normalized["canonical_facet_id"].eq("price_band")].copy()
+    facet_path = args.output_dir / "multisource_candidate_normalized_v1.csv"
+    try:
+        facet_normalized.to_csv(facet_path, index=False, encoding="utf-8-sig")
+    except PermissionError:
+        facet_path = args.output_dir / "multisource_candidate_normalized_product_only_v1.csv"
+        facet_normalized.to_csv(facet_path, index=False, encoding="utf-8-sig")
     lines = [
         "# Multi-source Facet 후보 정규화 V1", "",
         "검토 후보를 비교·검토 가능한 원자 값과 구조화 필드로 분리한 산출물이다.",
@@ -32,7 +41,9 @@ def main() -> None:
         "- `REVIEW_REQUIRED`: 정규화됐지만 사람 검토가 필요한 후보",
         "- `EVIDENCE_ONLY`: MFDS 규제 기능 원문으로만 보존할 후보",
         "- `REJECT`: 범위 이탈 또는 근거 부족으로 제외할 후보", "",
-        f"총 정규화 행: {len(normalized):,}"
+        f"상품 Facet 정규화 행: {len(facet_normalized):,}",
+        f"Demand 가격 조건 행: {len(demand_constraints):,}",
+        "가격대는 상품 Facet에 포함하지 않고 별도 Demand 조건으로 보존"
     ]
     (args.output_dir / "multisource_candidate_normalized_v1.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(result | {"normalized_rows": len(normalized)})
