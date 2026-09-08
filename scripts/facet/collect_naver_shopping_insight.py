@@ -69,11 +69,15 @@ def build_requests(
 def flatten_response(request_meta: dict[str, Any], payload: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     for result in payload.get("results", []):
+        title = str(result.get("title", ""))
+        facet_candidate, _, value_candidate = title.partition(":")
         for point in result.get("data", []):
             rows.append({
                 "service_category": request_meta["category_key"],
                 "naver_category_id": request_meta["category_id"],
-                "facet_keyword_group": result.get("title", ""),
+                "facet_keyword_group": title,
+                "facet_candidate": facet_candidate,
+                "value_candidate": value_candidate,
                 "keyword": ",".join(result.get("keyword", [])),
                 "period": point.get("period", ""),
                 "ratio": point.get("ratio"),

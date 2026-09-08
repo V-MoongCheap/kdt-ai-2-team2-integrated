@@ -43,7 +43,9 @@ SOURCE_LICENSES = {
     "esci": ("https://github.com/amazon-science/esci-data", "SEE_SOURCE_REPOSITORY"),
     "xpqa": ("https://github.com/amazon-science/contextual-product-qa", "CDLA-Sharing-1.0"),
     "kuaisearch": ("https://huggingface.co/datasets/benchen4395/KuaiSearch", "MIT"),
-    "amazon_reviews": ("", "UNKNOWN"), "aihub": ("", "UNKNOWN"),
+    "naver_shopping_insight": ("https://api.ncloud-docs.com/docs/naver-api-hub-shopping-insight-keywords", "SEE_TERMS"),
+    "lgu_hff": ("", "UNKNOWN"), "korean_consumer_aggregate": ("", "UNKNOWN"),
+    "aihub": ("", "UNKNOWN"),
 }
 
 
@@ -104,7 +106,7 @@ def build_seller(path: Path) -> pd.DataFrame:
     frame = pd.read_csv(path, dtype=str).fillna("")
     frame = frame[frame.get("health_scope", "").astype(str).eq("core")]
     frame = frame.copy(); frame["service_category"] = "health-functional-food"
-    return _extract_text_evidence("domeggook", "SELLER_LISTING", frame, ["title", "semantic_text", "package_spec", "ingredients_raw", "functionality_raw", "intake_raw"], "service_category", "item_id", "item_id")
+    return _extract_text_evidence("domeggook", "SELLER_PRODUCT_EVIDENCE", frame, ["title", "semantic_text", "package_spec", "ingredients_raw", "functionality_raw", "intake_raw"], "service_category", "item_id", "item_id")
 
 
 def build_esci(directory: Path) -> pd.DataFrame:
@@ -179,7 +181,7 @@ def build_kuaisearch(directory: Path, query_output: Path | None = None, translat
                 for attribute, patterns in ATTRIBUTE_PATTERNS.items():
                     for value, pattern in patterns:
                         if re.search(pattern, text, re.I):
-                            rows.append(_row("kuaisearch", "CONSUMER_SEARCH", record.get("session_id"), item_id, "health-functional-food", text, attribute, value, term=value, behavior=behavior, license_status="MIT"))
+                            rows.append(_row("kuaisearch", "FOREIGN_CONSUMER_SEARCH_REFERENCE", record.get("session_id"), item_id, "health-functional-food", text, attribute, value, term=value, behavior=behavior, license_status="MIT"))
     if query_output is not None:
         query_output.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(query_rows, columns=["source", "query_raw", "language", "health_item_id", "behavior_evidence", "source_record_id"]).to_parquet(query_output, index=False)
@@ -187,9 +189,64 @@ def build_kuaisearch(directory: Path, query_output: Path | None = None, translat
     return pd.DataFrame(rows, columns=UNIFIED_COLUMNS) if rows else _empty()
 
 
+def build_kuaisearch_reference(path: Path) -> pd.DataFrame:
+    """Use the reviewed translation layer without rescanning the multi-GB raw log."""
+    if not path.exists():
+        return _empty()
+    frame = pd.read_parquet(path).fillna("")
+    frame = frame[frame.get("query_translated", "").astype(str).str.strip().ne("")].copy()
+    frame["category"] = "health-functional-food"
+    frame["query_id"] = frame.get("source_record_id", pd.Series(frame.index, index=frame.index)).astype(str)
+    return _extract_text_evidence(
+        "kuaisearch", "FOREIGN_CONSUMER_SEARCH_REFERENCE", frame,
+        ["query_translated", "query_raw"], "category", "query_id", "query_id", "MIT",
+    )
+
+
+def build_naver_trends(path: Path) -> pd.DataFrame:
+    """Load already-collected Naver trends as Korean search evidence."""
+    if not path.exists():
+        return _empty()
+    frame = pd.read_csv(path, dtype=str).fillna("")
+    rows = []
+    for item in frame.itertuples():
+        facet = _text(getattr(item, "facet_candidate", ""))
+        value = _text(getattr(item, "value_candidate", ""))
+        if not facet or not value:
+            title = _text(getattr(item, "facet_keyword_group", ""))
+            facet, _, value = title.partition(":")
+        if not value:
+            continue
+        rows.append(_row(
+            "naver_shopping_insight", "KOREAN_CONSUMER_SEARCH_EVIDENCE",
+            f"{getattr(item, 'service_category', '')}:{getattr(item, 'period', '')}:{value}",
+            "", getattr(item, "service_category", ""),
+            getattr(item, "keyword", value), facet, value,
+            term=value, behavior=f"ratio={getattr(item, 'ratio', '')}",
+            license_status="SEE_TERMS",
+        ))
+    return pd.DataFrame(rows, columns=UNIFIED_COLUMNS) if rows else _empty()
+
+
+def read_optional_aggregate(directory: Path, source: str, source_type: str) -> pd.DataFrame:
+    """Read user-provided aggregate CSV/Parquet without inventing missing data."""
+    if not directory.exists():
+        return pd.DataFrame()
+    paths = sorted([*directory.glob("*.csv"), *directory.glob("*.parquet")])
+    if not paths:
+        return pd.DataFrame()
+    path = paths[0]
+    frame = pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path, dtype=str)
+    frame = frame.fillna("")
+    frame.insert(0, "source", source)
+    frame.insert(1, "source_type", source_type)
+    frame.insert(2, "source_record_id", [f"{source}:{index}" for index in frame.index])
+    return frame
+
+
 def aggregate_evidence(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
-        return pd.DataFrame(columns=["category", "facet_candidate", "value_candidate", "mfds_document_count", "mfds_document_ratio", "seller_document_count", "seller_document_ratio", "search_query_count", "search_click_count", "search_purchase_count", "qa_count", "review_count", "korean_expression_count", "source_count", "product_verifiability", "consumer_salience", "commercial_salience", "new_facet_candidate", "review_status"])
+        return pd.DataFrame(columns=["category", "facet_candidate", "value_candidate", "mfds_support", "nutrition_db_support", "seller_support", "korean_purchase_support", "korean_search_support", "korean_consumer_aggregate_support", "foreign_reference_support", "korean_expression_support", "source_count", "product_verifiability", "korean_consumer_salience", "commercial_salience", "foreign_only_flag", "new_facet_candidate", "review_status"])
     usable = frame[(frame["medical_risk"].ne("DROP")) & (frame["source_type"] != "KOREAN_EXPRESSION_REFERENCE")].copy()
     keys = ["category", "normalized_attribute", "normalized_value"]
     rows: list[dict[str, Any]] = []
@@ -199,14 +256,17 @@ def aggregate_evidence(frame: pd.DataFrame) -> pd.DataFrame:
         attribute = ATTRIBUTE_CANONICAL.get(str(attribute), str(attribute))
         rows.append({
             "category": category, "facet_candidate": attribute, "value_candidate": value,
-            "mfds_document_count": int(counts.get("PRODUCT_FACT", 0)), "mfds_document_ratio": 0.0,
-            "seller_document_count": int(counts.get("SELLER_LISTING", 0)), "seller_document_ratio": 0.0,
-            "search_query_count": int(counts.get("CONSUMER_SEARCH", 0)), "search_click_count": 0, "search_purchase_count": 0,
-            "qa_count": int(counts.get("CONSUMER_QA", 0)), "review_count": int(counts.get("CONSUMER_REVIEW", 0)),
-            "korean_expression_count": int(counts.get("KOREAN_EXPRESSION_REFERENCE", 0)), "source_count": source_count,
+            "mfds_support": int(counts.get("PRODUCT_FACT", 0)), "nutrition_db_support": int(counts.get("NUTRITION_DB_PRODUCT_FACT", 0)),
+            "seller_support": int(counts.get("SELLER_PRODUCT_EVIDENCE", 0)),
+            "korean_purchase_support": int(counts.get("KOREAN_HFF_PURCHASE_AGGREGATE", 0)),
+            "korean_search_support": int(counts.get("KOREAN_CONSUMER_SEARCH_EVIDENCE", 0)),
+            "korean_consumer_aggregate_support": int(counts.get("KOREAN_CONSUMER_AGGREGATE", 0)),
+            "foreign_reference_support": int(counts.get("FOREIGN_CONSUMER_SEARCH_REFERENCE", 0)),
+            "korean_expression_support": int(counts.get("KOREAN_EXPRESSION_REFERENCE", 0)), "source_count": source_count,
             "product_verifiability": "HIGH" if counts.get("PRODUCT_FACT", 0) else "LOW",
-            "consumer_salience": "HIGH" if counts.get("CONSUMER_SEARCH", 0) or counts.get("CONSUMER_QA", 0) or counts.get("CONSUMER_REVIEW", 0) else "LOW",
-            "commercial_salience": "HIGH" if counts.get("SELLER_LISTING", 0) else "LOW",
+            "korean_consumer_salience": "HIGH" if counts.get("KOREAN_CONSUMER_SEARCH_EVIDENCE", 0) or counts.get("KOREAN_HFF_PURCHASE_AGGREGATE", 0) or counts.get("KOREAN_CONSUMER_AGGREGATE", 0) else "LOW",
+            "commercial_salience": "HIGH" if counts.get("SELLER_PRODUCT_EVIDENCE", 0) else "LOW",
+            "foreign_only_flag": bool(counts.get("FOREIGN_CONSUMER_SEARCH_REFERENCE", 0) and not any(counts.get(item, 0) for item in ("PRODUCT_FACT", "SELLER_PRODUCT_EVIDENCE", "KOREAN_CONSUMER_SEARCH_EVIDENCE"))),
             "new_facet_candidate": attribute not in EXISTING_FACETS, "review_status": "REVIEW",
         })
     return pd.DataFrame(rows).sort_values(["category", "facet_candidate", "value_candidate"]).reset_index(drop=True)
@@ -228,33 +288,99 @@ def build_review_queue(aggregate: pd.DataFrame, evidence: pd.DataFrame) -> pd.Da
     return result
 
 
-def build_audit(evidence: pd.DataFrame, aggregate: pd.DataFrame, source_status: list[dict[str, Any]]) -> str:
-    lines = ["# FACET EVIDENCE RESULT", "", "## Existing Data", f"- MFDS evidence rows: {int((evidence.source == 'mfds').sum())}", f"- Seller evidence rows: {int((evidence.source == 'domeggook').sum())}", f"- AI-Hub expression rows: {int((evidence.source == 'aihub').sum())}", "", "## New Sources"]
+def build_baseline_comparison(evidence: pd.DataFrame) -> pd.DataFrame:
+    tiers = {
+        "Baseline A": {"PRODUCT_FACT", "NUTRITION_DB_PRODUCT_FACT"},
+        "Baseline B": {"PRODUCT_FACT", "NUTRITION_DB_PRODUCT_FACT", "SELLER_PRODUCT_EVIDENCE"},
+        "Extended C": {"PRODUCT_FACT", "NUTRITION_DB_PRODUCT_FACT", "SELLER_PRODUCT_EVIDENCE", "KOREAN_CONSUMER_SEARCH_EVIDENCE", "KOREAN_HFF_PURCHASE_AGGREGATE", "KOREAN_CONSUMER_AGGREGATE"},
+        "Reference D": {"PRODUCT_FACT", "NUTRITION_DB_PRODUCT_FACT", "SELLER_PRODUCT_EVIDENCE", "KOREAN_CONSUMER_SEARCH_EVIDENCE", "KOREAN_HFF_PURCHASE_AGGREGATE", "KOREAN_CONSUMER_AGGREGATE", "FOREIGN_CONSUMER_SEARCH_REFERENCE", "KOREAN_EXPRESSION_REFERENCE"},
+    }
+    rows = []
+    for name, source_types in tiers.items():
+        subset = evidence[evidence["source_type"].isin(source_types)]
+        current = aggregate_evidence(subset)
+        rows.append({
+            "baseline": name,
+            "candidate_count": len(current),
+            "product_supported_candidate_count": int(((current.get("mfds_support", 0) > 0) | (current.get("nutrition_db_support", 0) > 0)).sum()) if not current.empty else 0,
+            "korean_market_supported_count": int(((current.get("seller_support", 0) > 0) | (current.get("korean_search_support", 0) > 0) | (current.get("korean_purchase_support", 0) > 0) | (current.get("korean_consumer_aggregate_support", 0) > 0)).sum()) if not current.empty else 0,
+            "foreign_only_count": int(current["foreign_only_flag"].sum()) if not current.empty else 0,
+            "source_2plus_supported": int((current["source_count"] >= 2).sum()) if not current.empty else 0,
+            "source_3plus_supported": int((current["source_count"] >= 3).sum()) if not current.empty else 0,
+        })
+    return pd.DataFrame(rows)
+
+
+def build_audit(evidence: pd.DataFrame, aggregate: pd.DataFrame, source_status: list[dict[str, Any]], baseline: pd.DataFrame | None = None) -> str:
+    counts = evidence["source_type"].value_counts().to_dict() if not evidence.empty else {}
+    lines = ["# KOREAN HFF MODEL 1 DATA RESULT", "", "## Existing Product Data", f"- MFDS evidence rows: {counts.get('PRODUCT_FACT', 0)}", f"- Seller evidence rows: {counts.get('SELLER_PRODUCT_EVIDENCE', 0)}", f"- Service categories represented: {evidence['category'].nunique() if not evidence.empty else 0}", "", "## Source Status"]
     for item in source_status:
-        lines.append(f"- {item['source']}: {item['status']} ({item['rows']} evidence rows)")
-    lines += ["", "## Facet Candidates", f"- Candidate rows: {len(aggregate)}", f"- New Facet candidates: {int(aggregate['new_facet_candidate'].sum()) if not aggregate.empty else 0}", "- Existing taxonomy is not automatically changed.", "", "## Limitations", "- Search, Q&A, review, seller text, and AI-Hub expressions are reference evidence, not consumer-demand ground truth.", "- Missing or unknown license information is not inferred as permission.", "- Human review is required before taxonomy or alias approval."]
+        lines.append(f"- {item['source']} [{item.get('source_type', '')}]: {item['status']} ({item['rows']} rows)")
+    lines += ["", "## Facet Candidates", f"- Candidate rows: {len(aggregate)}", f"- New Facet candidates: {int(aggregate['new_facet_candidate'].sum()) if not aggregate.empty else 0}", f"- Source 2+ support: {int((aggregate['source_count'] >= 2).sum()) if not aggregate.empty else 0}", f"- Source 3+ support: {int((aggregate['source_count'] >= 3).sum()) if not aggregate.empty else 0}", f"- Foreign-only candidates: {int(aggregate['foreign_only_flag'].sum()) if not aggregate.empty else 0}", "- Existing taxonomy is not automatically changed."]
+    if baseline is not None and not baseline.empty:
+        lines += ["", "## Baseline Comparison", baseline.to_csv(index=False).strip()]
+    lines += ["", "## Limitations", "- Purchase data is aggregate evidence, not individual Korean order logs.", "- NAVER Shopping Insight ratio is relative click trend, not absolute search volume.", "- KuaiSearch is Chinese reference data.", "- AI-Hub is not a health-functional-food-only review corpus.", "- Korean health-functional-food review data is NOT_AVAILABLE under the current access policy.", "- Missing or unknown license information is not inferred as permission.", "- Human review is required before taxonomy or alias approval."]
     return "\n".join(lines) + "\n"
 
 
 def run_pipeline(root: Path, output_dir: Path, enable_reviews: bool = False) -> dict[str, Any]:
+    """Run the Korean HFF evidence pipeline without synthetic or foreign ecommerce facts."""
+    del enable_reviews
     output_dir.mkdir(parents=True, exist_ok=True)
     mfds = root / "data/interim/facet_discovery/i0030_products_clean_dedup.csv"
     mapping = root / "data/processed/category_v2_1_current/product_service_category_mapping_v2_1.csv"
-    evidence = [build_mfds(mfds, mapping) if mfds.exists() else _empty()]
-    statuses = [{"source": "mfds", "status": "AVAILABLE" if mfds.exists() else "NOT_ACQUIRED", "rows": len(evidence[0])}]
+    evidence: list[pd.DataFrame] = []
+    statuses: list[dict[str, Any]] = []
+
+    mfds_frame = build_mfds(mfds, mapping) if mfds.exists() else _empty()
+    evidence.append(mfds_frame)
+    statuses.append({"source": "mfds", "source_type": "PRODUCT_FACT", "status": "AVAILABLE" if mfds.exists() else "NOT_ACQUIRED", "rows": len(mfds_frame)})
+
+    nutrition = root / "data/raw/facet_evidence/nutrition_db"
+    nutrition_frame = _empty()
+    statuses.append({"source": "nutrition_db", "source_type": "NUTRITION_DB_PRODUCT_FACT", "status": "NOT_AVAILABLE" if not nutrition.exists() else "ADAPTER_PENDING", "rows": len(nutrition_frame)})
+
     seller = root / "data/processed/domeggook/seller_offers_core.csv"
-    seller_frame = build_seller(seller) if seller.exists() else _empty(); evidence.append(seller_frame); statuses.append({"source": "domeggook", "status": "AVAILABLE" if seller.exists() else "NOT_ACQUIRED", "rows": len(seller_frame)})
-    esci = root / "data/processed/esci"; esci_frame = build_esci(esci) if (esci / "queries.parquet").exists() and (esci / "products.parquet").exists() else _empty(); evidence.append(esci_frame); statuses.append({"source": "esci", "status": "AVAILABLE" if not esci_frame.empty else "NO_HEALTH_MATCH", "rows": len(esci_frame)})
-    xpqa = root / "data/raw/consumer_reference/xpqa"; xpqa_frame = build_xpqa(xpqa) if xpqa.exists() else _empty(); evidence.append(xpqa_frame); statuses.append({"source": "xpqa", "status": "AVAILABLE" if not xpqa_frame.empty else "NO_HEALTH_MATCH", "rows": len(xpqa_frame)})
-    kuai = root / "data/raw/consumer_reference/kuaisearch"; kuai_frame = build_kuaisearch(kuai, output_dir / "kuaiseach_health_queries.parquet"); evidence.append(kuai_frame); statuses.append({"source": "kuaisearch", "status": "AVAILABLE" if (kuai / "items_lite" / "train.jsonl").exists() else "NOT_ACQUIRED", "rows": len(kuai_frame)})
-    reviews = root / "data/raw/facet_evidence/amazon_reviews"; statuses.append({"source": "amazon_reviews", "status": "ENABLED" if enable_reviews and reviews.exists() else "NOT_ACQUIRED", "rows": 0})
-    aihub = root / "data/interim/facet_discovery/aihub_repeated_terms.csv"; aihub_frame = build_aihub(aihub); evidence.append(aihub_frame); statuses.append({"source": "aihub", "status": "AVAILABLE_EXPRESSION_REFERENCE" if aihub.exists() else "NOT_ACQUIRED", "rows": len(aihub_frame)})
+    seller_frame = build_seller(seller) if seller.exists() else _empty()
+    evidence.append(seller_frame)
+    statuses.append({"source": "domeggook", "source_type": "SELLER_PRODUCT_EVIDENCE", "status": "AVAILABLE" if seller.exists() else "NOT_ACQUIRED", "rows": len(seller_frame)})
+
+    kuai = root / "data/raw/consumer_reference/kuaisearch"
+    kuai_translation = root / "data/interim/facet_evidence/kuaiseach_health_queries_ko_reviewed_v27.parquet"
+    kuai_frame = build_kuaisearch_reference(kuai_translation)
+    evidence.append(kuai_frame)
+    statuses.append({"source": "kuaisearch", "source_type": "FOREIGN_CONSUMER_SEARCH_REFERENCE", "status": "AVAILABLE_TRANSLATED_REFERENCE" if not kuai_frame.empty else "NOT_ACQUIRED", "rows": len(kuai_frame), "raw_log_scan": False})
+
+    naver_path = root / "data/processed/facet_discovery/naver_shopping_insight/naver_facet_keyword_trends_preview.csv"
+    naver_frame = build_naver_trends(naver_path)
+    evidence.append(naver_frame)
+    statuses.append({"source": "naver_shopping_insight", "source_type": "KOREAN_CONSUMER_SEARCH_EVIDENCE", "status": "AVAILABLE" if not naver_frame.empty else "NOT_AVAILABLE", "rows": len(naver_frame)})
+
+    aihub = root / "data/interim/facet_discovery/aihub_repeated_terms.csv"
+    aihub_frame = build_aihub(aihub)
+    evidence.append(aihub_frame)
+    statuses.append({"source": "aihub", "source_type": "KOREAN_EXPRESSION_REFERENCE", "status": "AVAILABLE_EXPRESSION_REFERENCE" if aihub.exists() else "NOT_AVAILABLE", "rows": len(aihub_frame)})
+
+    purchase_metrics = read_optional_aggregate(root / "data/raw/facet_evidence/lgu_hff", "lgu_hff", "KOREAN_HFF_PURCHASE_AGGREGATE")
+    consumer_metrics = read_optional_aggregate(root / "data/raw/facet_evidence/korean_consumer_aggregate", "korean_consumer_aggregate", "KOREAN_CONSUMER_AGGREGATE")
+    pd.concat([purchase_metrics, consumer_metrics], ignore_index=True).to_csv(output_dir / "consumer_aggregate_metrics.csv", index=False, encoding="utf-8-sig")
+    statuses.append({"source": "lgu_hff", "source_type": "KOREAN_HFF_PURCHASE_AGGREGATE", "status": "AVAILABLE" if not purchase_metrics.empty else "NOT_AVAILABLE", "rows": len(purchase_metrics)})
+    statuses.append({"source": "korean_consumer_aggregate", "source_type": "KOREAN_CONSUMER_AGGREGATE", "status": "AVAILABLE" if not consumer_metrics.empty else "NOT_AVAILABLE", "rows": len(consumer_metrics)})
+    statuses.append({"source": "korean_hff_review", "source_type": "KOREAN_HFF_REVIEW_DATA", "status": "NOT_AVAILABLE", "rows": 0})
+
     unified = pd.concat(evidence, ignore_index=True) if evidence else _empty()
-    aggregate = aggregate_evidence(unified); review = build_review_queue(aggregate, unified)
-    unified.to_parquet(output_dir / "facet_evidence_unified.parquet", index=False); unified.to_csv(output_dir / "facet_evidence_unified_preview.csv", index=False, encoding="utf-8-sig")
-    aggregate.to_csv(output_dir / "facet_cross_source_evidence.csv", index=False, encoding="utf-8-sig"); review.to_csv(output_dir / "facet_review_queue_v1.csv", index=False, encoding="utf-8-sig")
-    (output_dir / "facet_candidates_v1.json").write_text(json.dumps({"version": "v1", "status": "REVIEW", "candidates": aggregate.to_dict(orient="records")}, ensure_ascii=False, indent=2), encoding="utf-8")
-    license_rows = [{"source": item["source"], "official_url": SOURCE_LICENSES.get(item["source"], ("", "UNKNOWN"))[0], "license": SOURCE_LICENSES.get(item["source"], ("", "UNKNOWN"))[1], "download_allowed": "UNKNOWN", "processing_allowed": "UNKNOWN", "redistribution_allowed": "UNKNOWN", "github_raw_allowed": "UNKNOWN", "local_only": True, "notes": item["status"]} for item in statuses]
-    pd.DataFrame(license_rows).to_csv(root / "data/reports/facet_discovery/facet_evidence_source_license.csv", index=False, encoding="utf-8-sig")
-    (root / "data/reports/facet_discovery").mkdir(parents=True, exist_ok=True); (root / "data/reports/facet_discovery/FACET_EVIDENCE_RESULT.md").write_text(build_audit(unified, aggregate, statuses), encoding="utf-8")
+    aggregate = aggregate_evidence(unified)
+    review = build_review_queue(aggregate, unified)
+    unified.to_parquet(output_dir / "facet_evidence_unified.parquet", index=False)
+    unified.to_csv(output_dir / "facet_evidence_unified_preview.csv", index=False, encoding="utf-8-sig")
+    aggregate.to_csv(output_dir / "facet_cross_source_evidence.csv", index=False, encoding="utf-8-sig")
+    review.to_csv(output_dir / "facet_review_queue_v2.csv", index=False, encoding="utf-8-sig")
+    baseline = build_baseline_comparison(unified)
+    baseline.to_csv(output_dir / "facet_baseline_comparison_v1.csv", index=False, encoding="utf-8-sig")
+    (output_dir / "facet_candidates_v1.json").write_text(json.dumps({"version": "v2", "status": "REVIEW", "candidates": aggregate.to_dict(orient="records")}, ensure_ascii=False, indent=2), encoding="utf-8")
+    report_dir = root / "data/reports/facet_discovery"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    license_rows = [{"source": item["source"], "official_url": SOURCE_LICENSES.get(item["source"], ("", "UNKNOWN"))[0], "license_status": SOURCE_LICENSES.get(item["source"], ("", "UNKNOWN"))[1], "raw_redistribution": "UNKNOWN", "processed_use": "UNKNOWN", "github_raw_allowed": "false", "local_only": True, "notes": item["status"]} for item in statuses]
+    pd.DataFrame(license_rows).to_csv(report_dir / "source_access_license_audit.csv", index=False, encoding="utf-8-sig")
+    (report_dir / "KOREAN_HFF_MODEL1_DATA_RESULT.md").write_text(build_audit(unified, aggregate, statuses, baseline), encoding="utf-8")
     return {"status": "COMPLETED", "evidence_rows": len(unified), "candidate_rows": len(aggregate), "review_rows": len(review), "sources": statuses}
