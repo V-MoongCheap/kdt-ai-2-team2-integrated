@@ -1,6 +1,6 @@
 import pandas as pd
 
-from moongcheap_ai.data_foundation.model1_review import collapse_same_model_candidates, display_category_name, normalize_review_candidates, review_candidates
+from moongcheap_ai.data_foundation.model1_review import canonical_semantic_value, collapse_same_model_candidates, display_category_name, normalize_review_candidates, normalize_value, review_candidates
 
 
 def _inputs() -> pd.DataFrame:
@@ -111,3 +111,13 @@ def test_pill_form_is_normalized_without_auto_approval():
     normalized = normalize_review_candidates(reviewed)
     assert normalized.iloc[0].normalized_atom == "pill"
     assert normalized.iloc[0].review_status == "REJECT"
+
+
+def test_language_label_is_removed_from_regulated_function_text():
+    korean_label = chr(0xad6d) + chr(0xbb38)
+    assert normalize_value("regulated_function", f"skin moisture ({korean_label})") == "skin moisture"
+
+
+def test_equivalent_regulated_functions_share_a_canonical_group():
+    skin = chr(0xd53c) + chr(0xbd80) + " " + chr(0xbcf4) + chr(0xc2b5)
+    assert canonical_semantic_value("regulated_function", skin + "에 도움") == skin

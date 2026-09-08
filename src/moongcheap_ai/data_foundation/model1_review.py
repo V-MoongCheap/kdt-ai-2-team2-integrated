@@ -10,6 +10,8 @@ import pandas as pd
 
 
 def _u(value: str) -> str:
+    if "\\u" in value:
+        return re.sub(r"\\u([0-9a-fA-F]{4})", lambda match: chr(int(match.group(1), 16)), value)
     return value
 
 
@@ -30,6 +32,14 @@ CATEGORY_NAMES = {
 }
 OUT_OF_SCOPE = tuple(_u(value) for value in ("\uc57d", "\uc758\uc57d", "\uce58\ub8cc", "\uc9c8\ud658", "\ucc98\ubc29", "\uc54c\ub808\ub974\uae30", "\ud558\uc774\ub4dc\ub85c\uac94", "\uc5d0\uc13c\uc2a4")) + ("medicine", "drug", "treatment", "cosmetic")
 RAW_SENTENCE_MARKERS = tuple(_u(value) for value in ("\ub3c4\uc6c0\uc744 \uc904", "\uc720\uc9c0\ud558\ub294\ub370", "\uac00\uc7a5 \uc88b\uc740", "\ud544\uc694", "\ucd94\ucc9c"))
+REGULATED_CANONICAL_PATTERNS = (
+    (re.compile(_u(r"\ud53c\ubd80\s*\ubcf4\uc2b5")), _u("\ud53c\ubd80 \ubcf4\uc2b5")),
+    (re.compile(_u(r"\uc790\uc678\uc120.*\ud53c\ubd80.*\uac74\uac15|\ud53c\ubd80.*\uc790\uc678\uc120")), _u("\uc790\uc678\uc120 \ud53c\ubd80 \uac74\uac15")),
+    (re.compile(_u(r"\ud608\uc911\s*\ucf5c\ub808\uc2a4\ud14c\ub864")), _u("\ud608\uc911 \ucf5c\ub808\uc2a4\ud14c\ub864")),
+    (re.compile(_u(r"\ud608\ud589")), _u("\ud608\ud589")),
+    (re.compile(_u(r"\uc6d4\uacbd\uc804")), _u("\uc6d4\uacbd\uc804 \ubd88\ud3b8")),
+    (re.compile(_u(r"\uba74\uc5ed\uacfc\ubbfc\ubc18\uc751.*\ud53c\ubd80")), _u("\uba74\uc5ed\uacfc\ubbfc\ubc18\uc751 \ud53c\ubd80 \uc0c1\ud0dc")),
+)
 RECOGNITION_NUMBER_RE = re.compile(r"(?:\uae30\ub2a5\uc131\uc6d0\ub8cc\uc778\uc815\uc81c|\uc778\uc815\uc81c|\uc0dd\ub9ac\ud65c\uc131\uae30\ub2a5\s*)?(\d{4})\s*[-\u2013]\s*(\d+)\s*\ud638?", re.I)
 INTAKE_RE = re.compile(r"(?:(\d+)\s*\uc77c\s*)?(?:(\d+)\s*\ud68c)?", re.I)
 PRICE_RE = re.compile(r"^(?:UNDER_(\d+)|OVER_(\d+)|(\d+)_TO_(\d+))$", re.I)
@@ -53,7 +63,19 @@ def normalize_value(facet_id: str, value: Any) -> str:
         text = re.sub(r"\s*\([^)]*(?:" + _u("\uae30\ub2a5\uc131") + r"|" + _u("\uc0dd\ub9ac\ud65c\uc131") + r")[^)]*\)", "", text, flags=re.I)
         text = re.sub(r"\s*\([^)]*\d{4}\s*[-\u2013]\s*\d+\s*\ud638?[^)]*\)", "", text, flags=re.I)
     if facet_id == "regulated_function":
+        text = re.sub(_u(r"\(\s*\uad6d\ubb38\s*\)"), "", text, flags=re.I)
+        text = re.sub(_u(r"\(\s*\uc601\ubb38\s*\).*"), "", text, flags=re.I)
+        text = re.sub(r"\s+May help.*$", "", text, flags=re.I)
         text = re.sub(r"\s*\([^)]*\)", "", text)
+    return text.strip()
+
+
+def canonical_semantic_value(facet_id: str, value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if facet_id == "regulated_function":
+        for pattern, canonical in REGULATED_CANONICAL_PATTERNS:
+            if pattern.search(text):
+                return canonical
     return text
 
 
@@ -98,6 +120,7 @@ def normalize_review_candidates(reviewed: pd.DataFrame) -> pd.DataFrame:
         value = str(row.get("normalized_value", raw_value))
         atoms = [part.strip(" .") for part in re.split(r"[,;·•\n]+", value) if part.strip(" .")] if facet_id in {"functional_ingredients", "regulated_function"} else [value]
         if facet_id == "regulated_function": atoms = [re.sub(r"^\s*[①-⑳\d.)]+\s*", "", part).strip() for part in atoms]
+        atoms = [canonical_semantic_value(facet_id, atom) for atom in atoms]
         match = RECOGNITION_NUMBER_RE.search(raw_value)
         recognition = f"{match.group(1)}-{match.group(2)}" if match else ""
         intake_days = intake_frequency = ""
