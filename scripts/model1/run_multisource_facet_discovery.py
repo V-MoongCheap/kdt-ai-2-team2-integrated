@@ -217,25 +217,25 @@ def add_data_selection_reason(candidates: pd.DataFrame, input_data: pd.DataFrame
     text_columns = ["product_name", "product_form", "functional_ingredients", "regulated_function", "intake_method", "price_text", "quantity_text", "seller_condition", "evidence_text"]
     source_counts = input_data.groupby(["category_key", "source_type"])["source_product_id"].nunique().to_dict()
     category_counts = input_data.groupby("category_key")["source_product_id"].nunique().to_dict()
-    observed_cache: dict[tuple[str, str, str], tuple[int, list[str]]] = {}
-    for key, group in result.groupby(["model", "category_key", "name", "value"], dropna=False):
-        model, category_key, facet_name, value = key
+    observed_cache: dict[tuple[str, str], tuple[int, list[str]]] = {}
+    for key, group in result.groupby(["category_key", "value"], dropna=False):
+        category_key, value = key
         value_norm = _normalize(value)
         category_rows = input_data[input_data["category_key"].eq(category_key)]
         mask = category_rows[text_columns].astype(str).apply(lambda column: column.map(_normalize).str.contains(re.escape(value_norm), regex=True, na=False)).any(axis=1) if value_norm else pd.Series(False, index=category_rows.index)
         observed = category_rows[mask]
         observed_types = sorted(observed["source_type"].drop_duplicates().tolist())
         observed_cache[key] = (len(observed), observed_types)
+    evidence_counts = result.groupby(["model", "category_key", "name", "value"], dropna=False)["source_product_id"].nunique().to_dict()
     reasons = []
     observed_rows = []
     observed_type_counts = []
     observed_types_text = []
     for row in result.itertuples():
-        key = (row.model, row.category_key, row.name, row.value)
+        key = (row.category_key, row.value)
         count, types = observed_cache[key]
         evidence_type = _text(row.evidence_source_type)
-        model_evidence = result[(result["model"].eq(row.model)) & (result["category_key"].eq(row.category_key)) & (result["name"].eq(row.name)) & (result["value"].eq(row.value))]
-        evidence_count = model_evidence["source_product_id"].nunique()
+        evidence_count = int(evidence_counts.get((row.model, row.category_key, row.name, row.value), 0))
         source_text = ", ".join(f"{item}: {int(source_counts.get((row.category_key, item), 0))}건" for item in types)
         reasons.append(f"{row.model}의 {row.category_key} 후보. 입력 {int(category_counts.get(row.category_key, 0))}건 중 값과 일치하는 행 {count}건; 관찰 출처 {source_text or evidence_type or '없음'}; 모델 근거 {evidence_count}건.")
         observed_rows.append(count)

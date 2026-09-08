@@ -87,6 +87,7 @@ def review_candidates(candidates: pd.DataFrame, inputs: pd.DataFrame) -> pd.Data
     rows: list[dict[str, Any]] = []
     input_frame = inputs.fillna("").copy()
     text_columns = [column for column in ("product_name", "product_form", "functional_ingredients", "regulated_function", "intake_method", "price_text", "quantity_text", "seller_condition", "evidence_text") if column in input_frame.columns]
+    normalized_input = input_frame[text_columns].astype(str).map(normalize_text) if text_columns else pd.DataFrame(index=input_frame.index)
     for _, candidate in candidates.fillna("").iterrows():
         raw_name = str(candidate.get("name", ""))
         facet_id, scope = FACET_MAP.get(normalize_text(raw_name), (normalize_text(raw_name).replace(" ", "_"), "UNKNOWN"))
@@ -94,7 +95,9 @@ def review_candidates(candidates: pd.DataFrame, inputs: pd.DataFrame) -> pd.Data
         normalized = normalize_value(facet_id, raw_value)
         category = str(candidate.get("category_key", ""))
         category_rows = input_frame[input_frame["category_key"].astype(str).eq(category)] if "category_key" in input_frame else input_frame.iloc[0:0]
-        matching_rows = category_rows[category_rows[text_columns].astype(str).map(lambda value: _contains(value, normalize_text(raw_value))).any(axis=1)] if text_columns and not category_rows.empty else category_rows.iloc[0:0]
+        category_normalized = normalized_input.loc[category_rows.index]
+        needle = normalize_text(raw_value)
+        matching_rows = category_rows[category_normalized.map(lambda value: needle in value if needle else False).any(axis=1)] if text_columns and not category_rows.empty else category_rows.iloc[0:0]
         evidence_matches = _contains(str(candidate.get("source_text", "")), normalize_text(raw_value))
         reasons: list[str] = []
         status = "ACCEPT_CANDIDATE"
@@ -154,6 +157,32 @@ def collapse_same_model_candidates(normalized: pd.DataFrame) -> pd.DataFrame:
         row["evidence_product_count"] = int(len(product_ids))
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def build_review_queue(normalized: pd.DataFrame) -> pd.DataFrame:
+    """Create one editable decision row per candidate, not per evidence record."""
+    if normalized.empty:
+        return pd.DataFrame(columns=["review_id", "category_name", "category_key", "facet_name", "facet_id", "facet_value", "model", "model_reason", "observed_data_reason", "review_status", "review_reason", "source_product_ids", "human_decision", "human_value", "human_note"])
+    queue = normalized[normalized["review_status"].ne("ACCEPT_CANDIDATE")].copy()
+    queue["review_id"] = queue.apply(lambda row: "|".join(str(row.get(column, "")) for column in ("model", "category_key", "canonical_facet_id", "normalized_atom")), axis=1)
+    queue = queue.rename(columns={"name": "facet_name", "canonical_facet_id": "facet_id", "normalized_atom": "facet_value", "selection_reason": "model_reason", "data_selection_reason": "observed_data_reason", "review_reasons": "review_reason"})
+    columns = ["review_id", "category_name", "category_key", "facet_name", "facet_id", "facet_value", "model", "model_reason", "observed_data_reason", "review_status", "review_reason", "source_product_ids", "human_decision", "human_value", "human_note"]
+    for column in ("human_decision", "human_value", "human_note"):
+        queue[column] = ""
+    return queue.reindex(columns=columns).drop_duplicates("review_id").sort_values(["category_key", "facet_id", "facet_value", "model"], ignore_index=True)
+
+
+def apply_human_decisions(queue: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Resolve editable queue decisions and return all rows plus accepted rows."""
+    result = queue.fillna("").copy()
+    allowed = {"ACCEPT", "REJECT", "DEFER", ""}
+    result["human_decision"] = result["human_decision"].astype(str).str.strip().str.upper()
+    invalid = sorted(set(result.loc[~result.human_decision.isin(allowed), "human_decision"]))
+    if invalid:
+        raise ValueError(f"Unsupported human_decision values: {invalid}; use ACCEPT, REJECT, or DEFER")
+    result["resolved_value"] = result["human_value"].where(result["human_value"].ne(""), result["facet_value"])
+    result["resolution_status"] = result["human_decision"].map({"ACCEPT": "ACCEPTED_BY_HUMAN", "REJECT": "REJECTED_BY_HUMAN", "DEFER": "DEFERRED", "": "UNREVIEWED"})
+    return result, result[result["resolution_status"].eq("ACCEPTED_BY_HUMAN")].copy()
 
 
 def write_review_artifacts(candidates_path: Path, input_path: Path, output_dir: Path) -> dict[str, Any]:

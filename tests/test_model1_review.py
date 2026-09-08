@@ -1,6 +1,6 @@
 import pandas as pd
 
-from moongcheap_ai.data_foundation.model1_review import canonical_semantic_value, collapse_same_model_candidates, display_category_name, normalize_review_candidates, normalize_value, review_candidates
+from moongcheap_ai.data_foundation.model1_review import apply_human_decisions, build_review_queue, canonical_semantic_value, collapse_same_model_candidates, display_category_name, normalize_review_candidates, normalize_value, review_candidates
 
 
 def _inputs() -> pd.DataFrame:
@@ -121,3 +121,13 @@ def test_language_label_is_removed_from_regulated_function_text():
 def test_equivalent_regulated_functions_share_a_canonical_group():
     skin = chr(0xd53c) + chr(0xbd80) + " " + chr(0xbcf4) + chr(0xc2b5)
     assert canonical_semantic_value("regulated_function", skin + "에 도움") == skin
+def test_review_queue_has_one_row_per_candidate_and_accepts_human_decision():
+    reviewed = review_candidates(_candidate("Regulated Function", "skin moisture", "skin moisture"), _inputs())
+    reviewed["model"] = "qwen3:4b"
+    normalized = collapse_same_model_candidates(normalize_review_candidates(reviewed))
+    queue = build_review_queue(normalized)
+    assert len(queue) == 1
+    queue.loc[0, "human_decision"] = "ACCEPT"
+    resolved, accepted = apply_human_decisions(queue)
+    assert resolved.iloc[0].resolution_status == "ACCEPTED_BY_HUMAN"
+    assert len(accepted) == 1
