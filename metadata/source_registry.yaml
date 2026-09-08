@@ -45,3 +45,94 @@ sources:
     retrieved_at: 2026-09-08
     raw_path: data/raw/purchase/lg_uplus/
     notes: 공식 다운로드 URL과 로컬 파일 미확인.
+  - source_id: gnm_natural_quality_reviews
+    source_name: GNM Natural Quality public reviews
+    provider: GNM
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://gnm.co.kr/board/product/list.html?board_no=4
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_ROBOTS
+    automated_collection_status: BLOCKED_ROBOTS_REVIEW_PAGINATION
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    robots_url: https://gnm.co.kr/robots.txt
+    terms_url: https://gnm.co.kr/member/agreement.html
+    retrieved_at: 2026-09-08
+  - source_id: nutrione_reviews
+    source_name: Nutrione public reviews
+    provider: Nutrione
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://nutrione.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    automated_collection_status: BLOCKED_REVIEW_NOT_VERIFIED
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    robots_url: https://nutrione.co.kr/robots.txt
+    terms_url: https://nutrione.co.kr/compy/useterms
+    retrieved_at: 2026-09-08
+  - source_id: ckd_health_reviews
+    source_name: CKD Health public reviews
+    provider: CKD Health
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://ckdhcmall.co.kr/brandProductList.do?idx=43&pidx=1
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: GREEN
+    automated_collection_status: GREEN_PRELIGHT
+    internal_analysis_status: CONDITIONAL_PILOT_NOT_SELECTED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    robots_url: https://ckdhcmall.co.kr/robots.txt
+    terms_url: https://ckdhcmall.co.kr/policy.do?policyType=A004
+    retrieved_at: 2026-09-08
+  - source_id: nutrime_reviews
+    source_name: Nutrime public reviews
+    provider: Nutrime
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.nutrime.co.kr/board/?id=goods_review
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: GREEN
+    automated_collection_status: GREEN_PILOT_100_COMPLETED
+    internal_analysis_status: CONDITIONAL
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    robots_url: https://www.nutrime.co.kr/robots.txt
+    terms_url: https://www.nutrime.co.kr/service/agreement
+    retrieved_at: 2026-09-08
+  - source_id: lactiv_reviews
+    source_name: Lactiv public reviews
+    provider: Lactiv
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.lactiv.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_ROBOTS
+    automated_collection_status: BLOCKED_ROBOTS_REVIEW_PAGINATION
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    robots_url: https://www.lactiv.co.kr/robots.txt
+    terms_url: https://www.lactiv.co.kr/member/mall_agreement.html
+    retrieved_at: 2026-09-08
+  - source_id: frombio_reviews
+    source_name: Frombio public reviews
+    provider: Frombio
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://m.frombio.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_ROBOTS
+    automated_collection_status: BLOCKED_ROBOTS_REVIEW_PAGINATION
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    robots_url: https://m.frombio.co.kr/robots.txt
+    terms_url: https://m.frombio.co.kr/member/agreement.html
+    retrieved_at: 2026-09-08
+  - source_id: nutridday_reviews
+    source_name: Nutri D-DAY public reviews
+    provider: Nutri D-DAY
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://nutridday.com/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_ROBOTS
+    automated_collection_status: BLOCKED_ROBOTS_REVIEW_PAGINATION
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    robots_url: https://nutridday.com/robots.txt
+    terms_url: https://nutridday.com/member/agreement.html
+    retrieved_at: 2026-09-08
