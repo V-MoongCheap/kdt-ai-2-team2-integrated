@@ -33,6 +33,22 @@ def main() -> None:
     except PermissionError:
         facet_path = args.output_dir / "multisource_candidate_normalized_product_only_v1.csv"
         facet_normalized.to_csv(facet_path, index=False, encoding="utf-8-sig")
+    readable_columns = [
+        "category_name", "category_key", "name", "canonical_facet_id", "normalized_atom", "model",
+        "selection_reason", "value_reason", "data_selection_reason", "review_status", "review_scope",
+        "review_reasons", "source_product_ids", "candidate_row_count", "evidence_product_count",
+    ]
+    readable = facet_normalized.reindex(columns=readable_columns, fill_value="").rename(columns={
+        "category_name": "category_name",
+        "name": "facet_name",
+        "canonical_facet_id": "facet_id",
+        "normalized_atom": "facet_value",
+        "selection_reason": "model_reason",
+        "value_reason": "model_value_reason",
+        "data_selection_reason": "observed_data_reason",
+        "review_reasons": "review_reason",
+    })
+    readable.to_csv(args.output_dir / "multisource_candidate_readable_v1.csv", index=False, encoding="utf-8-sig")
     lines = [
         "# Multi-source Facet 후보 정규화 V1", "",
         "검토 후보를 비교·검토 가능한 원자 값과 구조화 필드로 분리한 산출물이다.",
