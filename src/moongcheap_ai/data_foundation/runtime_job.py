@@ -13,6 +13,7 @@ from typing import Any, Mapping
 import pandas as pd
 from dotenv import load_dotenv
 
+from ..mvp_pipeline import ReviewedAliasMatcher, _apply_aliases
 from .backend_contract import build_label_result_payload, post_label_results
 from .labeling import build_product_facet_map, label_demands, load_taxonomy
 from .postgres_reader import open_read_only_postgres, read_unprocessed_demands
@@ -30,6 +31,7 @@ def run_batch(
     taxonomy_path: Path,
     *,
     product_facets_path: Path | None = None,
+    alias_registry_path: Path | None = None,
     processed_at: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     loader = load_taxonomy(taxonomy_path)
@@ -37,6 +39,14 @@ def run_batch(
     if product_facets_path and product_facets_path.exists():
         facet_map = build_product_facet_map(pd.read_csv(product_facets_path, dtype=str).fillna(""))
     labeled = label_demands(demands.fillna(""), loader, product_facet_map=facet_map)
+    if alias_registry_path and alias_registry_path.exists():
+        labeled, alias_hits, corrected_alias_hits, alias_conflicts = _apply_aliases(
+            labeled, ReviewedAliasMatcher(alias_registry_path)
+        )
+        labeled["taxonomy_version"] = "v2.2"
+        labeled["alias_hits"] = alias_hits
+        labeled["corrected_alias_hits"] = corrected_alias_hits
+        labeled["alias_conflicts"] = alias_conflicts
     timestamp = processed_at or datetime.now(timezone.utc).isoformat()
     return labeled, build_label_result_payload(labeled, processed_at=timestamp)
 
@@ -47,13 +57,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input", type=Path, help="CSV dry-run input")
     parser.add_argument("--taxonomy", type=Path)
     parser.add_argument("--product-facets", type=Path)
+    parser.add_argument("--alias-registry", type=Path)
     parser.add_argument("--output", type=Path, default=Path("data/processed/demands/runtime_labeled_v0.csv"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.env_file:
         load_dotenv(args.env_file, override=False)
     source = os.environ
-    taxonomy_path = args.taxonomy or Path(_required(source, "A_TAXONOMY_PATH"))
+    taxonomy_path = args.taxonomy or Path(source.get("A_TAXONOMY_PATH", "config/facet_taxonomy_v2_2.json"))
     if not taxonomy_path.is_file():
         raise SystemExit(f"taxonomy file not found: {taxonomy_path}")
 
@@ -68,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             demands,
             taxonomy_path,
             product_facets_path=args.product_facets or (Path(source["A_PRODUCT_FACETS_PATH"]) if source.get("A_PRODUCT_FACETS_PATH") else None),
+            alias_registry_path=args.alias_registry or Path(source.get("A_ALIAS_REGISTRY_PATH", "config/model1_aliases_reviewed_v2.json")),
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         labeled.to_csv(args.output, index=False, encoding="utf-8-sig")
