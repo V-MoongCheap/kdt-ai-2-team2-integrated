@@ -21,9 +21,10 @@ def _accepted(row: pd.Series) -> bool:
     return decision == "APPROVE_ALIAS" or (decision == "NEEDS_REVIEW" and bool(corrected))
 
 
-def build_registry(review_path: Path, taxonomy_path: Path) -> tuple[dict[str, object], pd.DataFrame]:
+def build_registry(review_path: Path, taxonomy_path: Path, crosswalk_path: Path | None = None) -> tuple[dict[str, object], pd.DataFrame]:
     review = pd.read_csv(review_path, dtype=str).fillna("")
     taxonomy = json.loads(taxonomy_path.read_text(encoding="utf-8"))
+    crosswalk = json.loads(crosswalk_path.read_text(encoding="utf-8")).get("mappings", {}) if crosswalk_path else {}
     taxonomy_values: dict[str, set[str]] = defaultdict(set)
     for category in taxonomy.get("categories", []):
         for facet in category.get("facets", []):
@@ -49,15 +50,18 @@ def build_registry(review_path: Path, taxonomy_path: Path) -> tuple[dict[str, ob
     for entry in grouped.values():
         facet = str(entry["facet_name"])
         canonical = str(entry["canonical_value"])
+        taxonomy_canonical = str(crosswalk.get(facet, {}).get(canonical, canonical))
+        entry["taxonomy_canonical_value"] = taxonomy_canonical
         if facet not in taxonomy_values:
             status = "BLOCKED_FACET_NOT_IN_TAXONOMY"
-        elif _normalize(canonical) not in taxonomy_values[facet]:
+        elif _normalize(taxonomy_canonical) not in taxonomy_values[facet]:
             status = "BLOCKED_CANONICAL_VALUE_NOT_IN_TAXONOMY"
         else:
             status = "READY_TO_APPLY"
         audit_rows.append({
             "facet_name": facet,
             "canonical_value": canonical,
+            "taxonomy_canonical_value": taxonomy_canonical,
             "surface_count": len(entry["surfaces"]),
             "surfaces": " | ".join(entry["surfaces"]),
             "source_review_orders": " | ".join(map(str, entry["source_review_orders"])),
@@ -72,7 +76,7 @@ def build_registry(review_path: Path, taxonomy_path: Path) -> tuple[dict[str, ob
         "taxonomy": str(taxonomy_path),
         "taxonomy_is_modified": False,
         "aliases": [
-            {"facet_name": row["facet_name"], "canonical_value": row["canonical_value"], "surfaces": row["surfaces"].split(" | ") if row["surfaces"] else []}
+            {"facet_name": row["facet_name"], "canonical_value": row["taxonomy_canonical_value"], "surfaces": row["surfaces"].split(" | ") if row["surfaces"] else []}
             for row in ready
         ],
         "blocked_aliases": [row for row in audit_rows if row["apply_status"] != "READY_TO_APPLY"],
@@ -91,10 +95,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--review", type=Path, required=True)
     parser.add_argument("--taxonomy", type=Path, required=True)
+    parser.add_argument("--crosswalk", type=Path, default=None)
     parser.add_argument("--output-registry", type=Path, required=True)
     parser.add_argument("--output-audit", type=Path, required=True)
     args = parser.parse_args()
-    registry, audit = build_registry(args.review, args.taxonomy)
+    registry, audit = build_registry(args.review, args.taxonomy, args.crosswalk)
     args.output_registry.parent.mkdir(parents=True, exist_ok=True)
     args.output_audit.parent.mkdir(parents=True, exist_ok=True)
     args.output_registry.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")

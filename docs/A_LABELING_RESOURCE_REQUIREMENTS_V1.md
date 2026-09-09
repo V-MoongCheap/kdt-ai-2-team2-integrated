@@ -32,5 +32,6 @@ The reviewed Alias sheet has 62 accepted-or-corrected rows and 4 rejected rows. 
 
 - `data/processed/downstream_v2_1/model1_reviewed_aliases_v1.json`
 - `data/processed/downstream_v2_1/model1_alias_apply_audit_v1.csv`
+- `config/taxonomy_value_crosswalk_v1.json`
 
-No Alias was written into the Taxonomy because the current V2.1 Taxonomy exposes only `product_form`, `functional_ingredients`, and `daily_frequency`, while the review sheet contains eight Facet types. Even the supported `product_form` targets use English canonical labels while the current Taxonomy stores Korean values, so a value/code crosswalk is required before applying them.
+The crosswalk resolves four `product_form` targets (`tablet`, `powder`, `capsule`, `liquid`) to the current Korean taxonomy values. Those four targets are ready in the reviewed Alias registry and were smoke-tested across category-specific code orders. The other 16 targets remain blocked because their Facets are not present in the current V2.1 Taxonomy. The Taxonomy JSON itself remains unchanged.
