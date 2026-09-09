@@ -25,6 +25,8 @@
 - Source >= 3 Before / After: 0 / 4
 - Review Evidence Rows: 333
 - Review-supported Candidate Rows: 14
+- LG U+ Purchase Evidence Rows: 3402
+- LG U+ regional purchase aggregates are retained as market evidence and excluded from Facet candidate generation.
 - Review Source Count: 1 (Nutrime; Chongkundang은 0건)
 - Product/category crosswalk: 쇼핑몰 ID와 MFDS ID를 숫자만으로 조인하지 않으며, 상품명 완전일치 외에는 미매핑으로 유지
 - Review Source Agreement (both providers): 0

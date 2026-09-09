@@ -311,10 +311,22 @@ def read_optional_aggregate(directory: Path, source: str, source_type: str) -> p
     return frame
 
 
+def build_lgu_purchase_evidence(path: Path) -> pd.DataFrame:
+    """Represent LG U+ market metrics in unified evidence without making facets."""
+    if not path.exists():
+        return _empty()
+    frame = pd.read_parquet(path).fillna("")
+    rows = []
+    for item in frame.to_dict(orient="records"):
+        behavior = " | ".join(str(item.get(column, "")) for column in ("period", "region_sido", "region_sigungu", "region_dong") if str(item.get(column, "")).strip())
+        rows.append(_row("lgu_uplus", "KOREAN_HFF_PURCHASE_AGGREGATE", item.get("source_record_id", ""), "", "", item.get("market_metric_raw", ""), "market_metric", item.get("market_metric_type", ""), term=item.get("market_metric_raw", ""), behavior=behavior, license_status="INTERNAL_ONLY_PROVIDER_FILE"))
+    return pd.DataFrame(rows, columns=UNIFIED_COLUMNS) if rows else _empty()
+
+
 def aggregate_evidence(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame(columns=["category", "facet_candidate", "value_candidate", "mfds_support", "nutrition_db_support", "seller_support", "korean_purchase_support", "korean_search_support", "korean_consumer_aggregate_support", "foreign_reference_support", "korean_expression_support", "source_count", "product_verifiability", "korean_consumer_salience", "commercial_salience", "foreign_only_flag", "new_facet_candidate", "review_status"])
-    usable = frame[(frame["medical_risk"].ne("DROP")) & (frame["source_type"] != "KOREAN_EXPRESSION_REFERENCE")].copy()
+    usable = frame[(frame["medical_risk"].ne("DROP")) & (~frame["source_type"].isin({"KOREAN_EXPRESSION_REFERENCE", "KOREAN_HFF_PURCHASE_AGGREGATE"}))].copy()
     keys = ["category", "normalized_attribute", "normalized_value"]
     rows: list[dict[str, Any]] = []
     for (category, attribute, value), group in usable.groupby(keys, dropna=False):
@@ -444,10 +456,13 @@ def run_pipeline(root: Path, output_dir: Path, enable_reviews: bool = False, max
     evidence.append(aihub_frame)
     statuses.append({"source": "aihub", "source_type": "KOREAN_EXPRESSION_REFERENCE", "status": "AVAILABLE_EXPRESSION_REFERENCE" if aihub.exists() else "NOT_AVAILABLE", "rows": len(aihub_frame)})
 
+    lgu_purchase_path = root / "data/processed/purchase/lg_uplus_aggregate.parquet"
+    lgu_purchase_frame = build_lgu_purchase_evidence(lgu_purchase_path)
+    evidence.append(lgu_purchase_frame)
     purchase_metrics = read_optional_aggregate(root / "data/raw/facet_evidence/lgu_hff", "lgu_hff", "KOREAN_HFF_PURCHASE_AGGREGATE")
     consumer_metrics = read_optional_aggregate(root / "data/raw/facet_evidence/korean_consumer_aggregate", "korean_consumer_aggregate", "KOREAN_CONSUMER_AGGREGATE")
     pd.concat([purchase_metrics, consumer_metrics], ignore_index=True).to_csv(output_dir / "consumer_aggregate_metrics.csv", index=False, encoding="utf-8-sig")
-    statuses.append({"source": "lgu_hff", "source_type": "KOREAN_HFF_PURCHASE_AGGREGATE", "status": "AVAILABLE" if not purchase_metrics.empty else "NOT_AVAILABLE", "rows": len(purchase_metrics)})
+    statuses.append({"source": "lgu_uplus", "source_type": "KOREAN_HFF_PURCHASE_AGGREGATE", "status": "AVAILABLE" if not lgu_purchase_frame.empty else "NOT_AVAILABLE", "rows": len(lgu_purchase_frame), "raw_path": str(lgu_purchase_path)})
     statuses.append({"source": "korean_consumer_aggregate", "source_type": "KOREAN_CONSUMER_AGGREGATE", "status": "AVAILABLE" if not consumer_metrics.empty else "NOT_AVAILABLE", "rows": len(consumer_metrics)})
     review_paths = {
         "nutrime": sorted((root / "data/raw/reviews/nutrime").glob("*.jsonl")),

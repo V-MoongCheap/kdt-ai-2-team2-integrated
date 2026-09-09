@@ -21,6 +21,7 @@ def build_report(before_dir: Path, after_dir: Path, output: Path) -> dict[str, i
     nutrime = review.get("nutrime_review_evidence_count", pd.Series(0, index=review.index))
     chongkundang = review.get("chongkundang_review_evidence_count", pd.Series(0, index=review.index))
     review_source_counts = evidence[evidence["source_type"].eq("KOREAN_HFF_RAW_REVIEW")].groupby("source").size().to_dict()
+    lgu_purchase_evidence_rows = int((evidence["source_type"] == "KOREAN_HFF_PURCHASE_AGGREGATE").sum())
     source_pair = evidence[evidence["source_type"].eq("KOREAN_HFF_RAW_REVIEW")].groupby(["normalized_attribute", "normalized_value"])["source"].nunique()
     combinations = {
         "MFDS + Review": int(((review["mfds_support"] > 0) & ((nutrime > 0) | (chongkundang > 0))).sum()),
@@ -38,6 +39,7 @@ def build_report(before_dir: Path, after_dir: Path, output: Path) -> dict[str, i
         "review_evidence_rows": int((evidence["source_type"] == "KOREAN_HFF_RAW_REVIEW").sum()),
         "review_candidate_rows": int((review["review_source_count"] > 0).sum()),
         "human_review_queue_rows": len(review),
+        "lgu_purchase_evidence_rows": lgu_purchase_evidence_rows,
     }
     lines = [
         "# Model 1 Consumer Evidence Report",
@@ -67,6 +69,8 @@ def build_report(before_dir: Path, after_dir: Path, output: Path) -> dict[str, i
         f"- Source >= 3 Before / After: {metrics['before_source_3plus']} / {metrics['after_source_3plus']}",
         f"- Review Evidence Rows: {metrics['review_evidence_rows']}",
         f"- Review-supported Candidate Rows: {metrics['review_candidate_rows']}",
+        f"- LG U+ Purchase Evidence Rows: {metrics['lgu_purchase_evidence_rows']}",
+        "- LG U+ regional purchase aggregates are retained as market evidence and excluded from Facet candidate generation.",
         "- Review Source Count: 1 (Nutrime; Chongkundang은 0건)",
         "- Product/category crosswalk: 쇼핑몰 ID와 MFDS ID를 숫자만으로 조인하지 않으며, 상품명 완전일치 외에는 미매핑으로 유지",
         f"- Review Source Agreement (both providers): {combinations['Review Source 2']}",

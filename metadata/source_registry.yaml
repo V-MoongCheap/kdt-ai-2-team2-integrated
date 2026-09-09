@@ -36,15 +36,18 @@ sources:
     source_type: KOREAN_HFF_PURCHASE_AGGREGATE
     source_url: null
     acquisition_method: MANUAL_DOWNLOAD_IF_OFFICIAL_FREE_EXPORT
-    access_status: MISSING_VALID_SOURCE
+    access_status: AVAILABLE_LOCAL_FILE
     cost: FREE_ONLY
     login_required: unknown
     automated_collection_status: NOT_APPLICABLE
-    internal_analysis_status: WAITING_FOR_PROVIDER_RESPONSE
+    internal_analysis_status: AVAILABLE
     redistribution_status: UNKNOWN
-    retrieved_at: 2026-09-08
+    retrieved_at: 2026-09-09
     raw_path: data/raw/purchase/lg_uplus/
-    notes: 사용자가 전화번호 오류로 무료 다운로드를 완료하지 못했고 제공처에 이메일 문의 중. 회신 및 파일 확보 전에는 사용하지 않음.
+    raw_filename: "건강기능식품  융합데이터_시장지표_21년 12월.CSV"
+    sha256: 5fc954acc662eb2afe70fa3a9bcac64e8df6f553bd3804cce46e6edd3807573f
+    snapshot_id: "건강기능식품  융합데이터_시장지표_21년 12월:5fc954acc662"
+    notes: 실제 파일 1134행을 확인했다. 지역 집계와 주문건수·구매금액만 포함하며 제품명·상품분류가 없어 Product/MFDS 및 Category Mapping은 NOT_APPLICABLE로 기록한다.
   - source_id: gnm_natural_quality_reviews
     source_name: GNM Natural Quality public reviews
     provider: GNM
