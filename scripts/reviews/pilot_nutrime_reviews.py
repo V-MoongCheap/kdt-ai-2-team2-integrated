@@ -66,18 +66,48 @@ def extract_detail(body: str) -> dict[str, str]:
     }
 
 
-def run_pilot(output: Path, limit: int = 100, delay_seconds: float = 0.5) -> dict[str, object]:
-    if not 1 <= limit <= 500:
-        raise ValueError("Pilot limit must be between 1 and 500")
+def _load_existing(path: Path) -> list[dict[str, object]]:
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return rows
+
+
+def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    with temp.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    temp.replace(path)
+
+
+def run_pilot(output: Path, limit: int | None = None, delay_seconds: float = 0.5, checkpoint: Path | None = None, resume: bool = False, max_pages: int = 500) -> dict[str, object]:
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be positive when supplied")
+    if max_pages < 1:
+        raise ValueError("max_pages must be positive")
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "ko-KR,ko;q=0.9"})
-    rows: list[dict[str, object]] = []
-    seen: set[str] = set()
+    rows: list[dict[str, object]] = _load_existing(output) if resume else []
+    seen: set[str] = {str(row.get("source_review_id")) for row in rows if row.get("source_review_id")}
     page = 1
+    if resume and checkpoint and checkpoint.exists():
+        try:
+            page = int(json.loads(checkpoint.read_text(encoding="utf-8")).get("next_page", 1))
+        except (ValueError, json.JSONDecodeError):
+            page = 1
     stop_reason = "LIMIT_REACHED"
     previous_page_ids: set[str] = set()
     retrieved_at = datetime.now(timezone.utc).isoformat()
-    while len(rows) < limit and page <= 500:
+    pages_visited = 0
+    while (limit is None or len(rows) < limit) and pages_visited < max_pages:
         list_url = f"{BASE_URL}/board/?{urlencode({'id': 'goods_review', 'page': page})}"
         response = session.get(list_url, timeout=20)
         if response.status_code in (403, 429):
@@ -93,8 +123,9 @@ def run_pilot(output: Path, limit: int = 100, delay_seconds: float = 0.5) -> dic
             stop_reason = "NO_NEW_REVIEW_PAGE"
             break
         previous_page_ids.update(page_ids)
+        pages_visited += 1
         for card in cards:
-            if len(rows) >= limit or card["source_review_id"] in seen:
+            if limit is not None and len(rows) >= limit or card["source_review_id"] in seen:
                 continue
             detail = session.get(card["detail_url"], timeout=20)
             if detail.status_code in (403, 429):
@@ -127,16 +158,23 @@ def run_pilot(output: Path, limit: int = 100, delay_seconds: float = 0.5) -> dic
             break
         # The board uses an offset-like page parameter (links expose 10, 20, ...).
         page += 10
+        if checkpoint:
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            checkpoint.write_text(json.dumps({"next_page": page, "rows": len(rows), "updated_at": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False, indent=2), encoding="utf-8")
         time.sleep(delay_seconds)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    _write_rows(output, rows)
+    if checkpoint:
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_text(json.dumps({"next_page": page, "rows": len(rows), "stop_reason": stop_reason, "updated_at": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False, indent=2), encoding="utf-8")
     mapped = sum(bool(row["source_product_id"]) for row in rows)
     return {
         "status": "COMPLETED" if rows else "FAILED",
         "source": "nutrime",
         "rows": len(rows),
+        "raw_review_count": len(rows),
+        "usable_review_count": sum(bool(row.get("review_text")) for row in rows),
+        "unique_product_count": len({str(row.get("source_product_id")) for row in rows if row.get("source_product_id")}),
+        "pages_visited": pages_visited,
         "product_mapped_rows": mapped,
         "product_mapping_rate": mapped / len(rows) if rows else 0.0,
         "usable_review_text_rows": sum(bool(row["review_text"]) for row in rows),
@@ -147,8 +185,11 @@ def run_pilot(output: Path, limit: int = 100, delay_seconds: float = 0.5) -> dic
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=Path("data/raw/reviews/nutrime/nutrime_review_pilot_100.jsonl"))
-    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--output", type=Path, default=Path("data/raw/reviews/nutrime/nutrime_reviews_full.jsonl"))
+    parser.add_argument("--limit", type=int, default=None, help="Optional short Pilot limit; omit for full public range")
     parser.add_argument("--delay", type=float, default=0.5)
+    parser.add_argument("--checkpoint", type=Path, default=Path("data/raw/reviews/nutrime/nutrime_collection_checkpoint.json"))
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--max-pages", type=int, default=500)
     args = parser.parse_args()
-    print(json.dumps(run_pilot(args.output, args.limit, args.delay), ensure_ascii=False))
+    print(json.dumps(run_pilot(args.output, args.limit, args.delay, args.checkpoint, args.resume, args.max_pages), ensure_ascii=False))

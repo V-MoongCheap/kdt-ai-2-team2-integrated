@@ -3,6 +3,7 @@
 기준: Raw review snapshot을 보존한 상태에서 Product/Category 연결이 확인된 건만 매핑 카테고리에 집계한다. 연결되지 않은 상품은 별도 행으로 남긴다.
 
 - 총 Raw Review: 423
+- Analysis Review: 399 (상품별 상한: 50)
 - 매핑 성공 Review: 142
 - Unique Product: 19
 - Review Source 수: 1
@@ -15,18 +16,18 @@
 | 식이섬유·체중관리 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
 | 눈 건강 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
 | 혈행·혈압 건강 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
-| 관절·연골 건강 | 4 | 1 | 1 | 4 | 0 | VERY_LOW |
-| 간 건강 | 30 | 1 | 1 | 30 | 0 | VERY_LOW |
+| 관절·연골 건강 | 4 | 1 | 1 | 4 | 1 | VERY_LOW |
+| 간 건강 | 30 | 1 | 1 | 30 | 11 | VERY_LOW |
 | 남성 건강 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
 | 오메가·지방산 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
 | 기타 기능성 건강식품 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
-| 유산균·프로바이오틱스 | 14 | 1 | 1 | 14 | 0 | VERY_LOW |
+| 유산균·프로바이오틱스 | 14 | 1 | 1 | 14 | 10 | VERY_LOW |
 | 프로폴리스 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
 | 단백질 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
 | 홍삼·인삼 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
 | 피부·콜라겐 | 0 | 0 | 0 | 0 | 0 | CRITICAL |
-| 테아닌·수면 | 22 | 1 | 1 | 22 | 0 | VERY_LOW |
-| 비타민·미네랄 | 72 | 5 | 1 | 72 | 0 | LOW |
+| 테아닌·수면 | 22 | 1 | 1 | 22 | 5 | VERY_LOW |
+| 비타민·미네랄 | 72 | 5 | 1 | 72 | 74 | LOW |
 | UNMAPPED_REVIEW_PRODUCT | 281 | 10 | 1 | 0 | 0 | MODERATE |
 
 ## Product Concentration

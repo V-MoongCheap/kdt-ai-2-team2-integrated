@@ -24,13 +24,13 @@ def test_report_contains_required_fields(tmp_path: Path) -> None:
         assert field in text
 
 
-def test_pilot_limit_is_capped_at_five_hundred(tmp_path: Path) -> None:
+def test_pilot_limit_is_optional_and_positive(tmp_path: Path) -> None:
     try:
-        run_pilot(tmp_path / "reviews.jsonl", limit=501)
+        run_pilot(tmp_path / "reviews.jsonl", limit=0)
     except ValueError as exc:
-        assert "between 1 and 500" in str(exc)
+        assert "positive" in str(exc)
     else:
-        raise AssertionError("pilot must reject limits above 100")
+        raise AssertionError("pilot must reject non-positive limits")
 
 
 def test_chongkundang_pilot_limit_is_capped_at_one_hundred(tmp_path: Path) -> None:

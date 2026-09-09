@@ -25,11 +25,11 @@ sources:
     cost: UNKNOWN
     login_required: likely
     automated_collection_status: NOT_APPLICABLE
-    internal_analysis_status: CONDITIONAL
+    internal_analysis_status: WAITING_FOR_DASHBOARD_ACCESS
     redistribution_status: UNKNOWN
     retrieved_at: 2026-09-08
     raw_path: data/raw/purchase/foodpolis/
-    notes: 공식 Export 파일 대기.
+    notes: 사용자가 대시보드 신청 완료. 승인 후 마이페이지 > 나만의 대시보드 > 서비스 접속에서 정상 UI Export를 받아 처리.
   - source_id: lgu_uplus_hff_2021_12
     source_name: 건강기능식품 융합데이터 시장지표 21년 12월
     provider: LG U+
@@ -40,11 +40,11 @@ sources:
     cost: FREE_ONLY
     login_required: unknown
     automated_collection_status: NOT_APPLICABLE
-    internal_analysis_status: CONDITIONAL
+    internal_analysis_status: WAITING_FOR_PROVIDER_RESPONSE
     redistribution_status: UNKNOWN
     retrieved_at: 2026-09-08
     raw_path: data/raw/purchase/lg_uplus/
-    notes: 공식 다운로드 URL과 로컬 파일 미확인.
+    notes: 사용자가 전화번호 오류로 무료 다운로드를 완료하지 못했고 제공처에 이메일 문의 중. 회신 및 파일 확보 전에는 사용하지 않음.
   - source_id: gnm_natural_quality_reviews
     source_name: GNM Natural Quality public reviews
     provider: GNM
@@ -248,3 +248,87 @@ sources:
     redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
     retrieved_at: 2026-09-09
     notes: 건기식 공식몰 후보이나 공개 리뷰 수집 가능성과 정책을 완결 검증하지 못함.
+  - source_id: rockpid_reviews
+    source_name: Rockpid public reviews candidate
+    provider: Rockpid
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://rockpid.com/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 공개 Raw Review와 상품 연결·정책을 완결 확인하지 못함.
+  - source_id: hiwell_korea_reviews
+    source_name: Hiwell Korea public reviews candidate
+    provider: Hiwell Korea
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://hiwellkorea.com/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 공개 Raw Review와 정상 수집 정책을 검증하지 못함.
+  - source_id: naturemade_korea_reviews
+    source_name: Nature Made Korea public reviews candidate
+    provider: Nature Made Korea
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.naturemade.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 한국 공개 Review 원문과 수집 정책 근거가 부족함.
+  - source_id: more_nature_reviews
+    source_name: More Nature public reviews candidate
+    provider: More Nature
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://morenature.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 공개 Review 원문·상품 연결·정책 확인이 완결되지 않음.
+  - source_id: vitamin_village_reviews
+    source_name: Vitamin Village public reviews candidate
+    provider: Vitamin Village
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://vitaminvillage.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 공개 Review를 정상 수집할 수 있는지 확인하지 못함.
+  - source_id: kolon_health_reviews
+    source_name: Kolon Health public reviews candidate
+    provider: Kolon Health
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.kolonhealth.com/goods/goods_list.php?cateCd=019002
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 상품 리뷰 수는 확인했지만 건기식 범위 필터와 자동수집 정책을 완결 검증하지 못함.

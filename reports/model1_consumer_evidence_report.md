@@ -6,7 +6,8 @@
 - Mapping After: 82.27% / 348건 / 423건
 - Mapping failure: 100건 기준 31건 모두 PRODUCT_ID_NOT_FOUND
 - HFF confirmed review: 348건
-- Facet evidence used by this run: 333건 (raw review snapshot 423건은 별도 보존)
+- Analysis Review: 399건 (상품별 최대 50건), raw review snapshot 423건은 별도 보존
+- Facet evidence used by this run: 333건
 - Medical outcome sentence: 5건 별도 제외
 - Unique product: 19개
 - Top 10 product review share: 74.70%

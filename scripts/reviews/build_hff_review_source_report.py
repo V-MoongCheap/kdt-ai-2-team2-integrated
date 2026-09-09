@@ -304,6 +304,26 @@ SOURCES = [
         "reason": "건기식 공식몰 후보이나 공개 리뷰 수집 가능성과 정책을 이번 조사에서 완결하지 못함.",
         "url": "https://www.cjwellcare.com/",
     },
+    {
+        "source": "rockpid",
+        "review_exists": "NOT_CONFIRMED", "hff_scope": "YES", "public_access": "PARTIAL", "product_linkable": "PARTIAL", "robots_status": "NOT_CONFIRMED", "terms_status": "UNCLEAR", "bot_protection": "UNKNOWN", "purchase_verified_policy": "UNKNOWN", "pilot_possible": "NO", "decision": "BLOCKED_UNVERIFIABLE_POLICY", "reason": "공식몰 후보이나 공개 Raw Review와 상품 연결·정책을 이번 조사에서 완결 확인하지 못함.", "url": "https://rockpid.com/",
+    },
+    {
+        "source": "hiwell_korea",
+        "review_exists": "NOT_CONFIRMED", "hff_scope": "YES", "public_access": "PARTIAL", "product_linkable": "PARTIAL", "robots_status": "NOT_CONFIRMED", "terms_status": "UNCLEAR", "bot_protection": "UNKNOWN", "purchase_verified_policy": "UNKNOWN", "pilot_possible": "NO", "decision": "BLOCKED_UNVERIFIABLE_POLICY", "reason": "공식몰 후보이나 공개 Raw Review와 정상 수집 정책을 검증하지 못함.", "url": "https://hiwellkorea.com/",
+    },
+    {
+        "source": "naturemade_korea",
+        "review_exists": "NOT_CONFIRMED", "hff_scope": "YES", "public_access": "PARTIAL", "product_linkable": "PARTIAL", "robots_status": "NOT_CONFIRMED", "terms_status": "UNCLEAR", "bot_protection": "UNKNOWN", "purchase_verified_policy": "UNKNOWN", "pilot_possible": "NO", "decision": "BLOCKED_UNVERIFIABLE_POLICY", "reason": "공식 온라인스토어 후보이나 한국 공개 Review 원문과 수집 정책 근거가 부족함.", "url": "https://www.naturemade.co.kr/",
+    },
+    {
+        "source": "more_nature",
+        "review_exists": "NOT_CONFIRMED", "hff_scope": "YES", "public_access": "PARTIAL", "product_linkable": "PARTIAL", "robots_status": "NOT_CONFIRMED", "terms_status": "UNCLEAR", "bot_protection": "UNKNOWN", "purchase_verified_policy": "UNKNOWN", "pilot_possible": "NO", "decision": "BLOCKED_UNVERIFIABLE_POLICY", "reason": "공식몰 후보이나 공개 Review 원문·상품 연결·정책 확인이 완결되지 않음.", "url": "https://morenature.co.kr/",
+    },
+    {
+        "source": "vitamin_village",
+        "review_exists": "NOT_CONFIRMED", "hff_scope": "YES", "public_access": "PARTIAL", "product_linkable": "PARTIAL", "robots_status": "NOT_CONFIRMED", "terms_status": "UNCLEAR", "bot_protection": "UNKNOWN", "purchase_verified_policy": "UNKNOWN", "pilot_possible": "NO", "decision": "BLOCKED_UNVERIFIABLE_POLICY", "reason": "공식 전문몰 후보이나 공개 Review를 정상 수집할 수 있는지 확인하지 못함.", "url": "https://vitaminvillage.co.kr/",
+    },
 ]
 
 
@@ -325,7 +345,7 @@ def build_report(output: Path) -> None:
         f"- GREEN: {sum(row['decision'] == 'GREEN' for row in SOURCES)}곳",
         f"- BLOCKED: {sum(row['decision'].startswith('BLOCKED') for row in SOURCES)}곳",
         "- CONDITIONAL: 0곳",
-        "- Raw Review Pilot: GREEN 후보인 뉴트리미에서 423건 확보(500건 목표, 공개 후기 종료).",
+        "- Raw Review: 뉴트리미 공개 Pagination에서 423건 확보. 고정 3,000/5,000건을 목표로 삼지 않으며 신규 공개분만 증분 수집한다.",
         "- Pilot Source: nutrime",
         "- Pilot Review 수: 423",
         "- Pilot Review Text Usable Rate: 100%",
@@ -361,8 +381,8 @@ def build_report(output: Path) -> None:
     lines.extend([
         "",
         "## 다음 단계",
-        "1. GREEN 후보는 100건에서 멈추고 품질 지표를 검토한다.",
-        "2. 403·429·CAPTCHA·Challenge가 발생하면 즉시 중단한다.",
+        "1. GREEN Source는 짧은 Pilot으로 접근성을 확인한 뒤 정상 공개 Pagination 범위까지 raw를 증분 수집한다.",
+        "2. 403·429·CAPTCHA·Challenge가 발생하면 즉시 중단하고 우회하지 않는다.",
         "3. 수집 데이터에는 작성자명·닉네임·IP를 저장하지 않고, 의료효과 표현은 Facet 후보에서 제외한다.",
     ])
     output.parent.mkdir(parents=True, exist_ok=True)

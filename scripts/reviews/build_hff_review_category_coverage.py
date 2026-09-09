@@ -45,6 +45,7 @@ def build_report(
     category_path: Path,
     evidence_path: Path | None,
     output: Path,
+    analysis_max_reviews_per_product: int | None = None,
 ) -> dict[str, object]:
     reviews: list[dict[str, object]] = []
     for path in review_paths:
@@ -65,6 +66,16 @@ def build_report(
         category = id_map.get(product_id) or name_map.get(_norm(product_name)) or "UNMAPPED_REVIEW_PRODUCT"
         rows.append({"source": str(item.get("_source") or "unknown"), "review_id": str(item.get("source_review_id") or ""), "product_id": product_id, "product_name": product_name, "category": category, "mapped": category != "UNMAPPED_REVIEW_PRODUCT"})
     review_frame = pd.DataFrame(rows)
+    analysis_review_count = len(review_frame)
+    if analysis_max_reviews_per_product is not None and not review_frame.empty:
+        seen_products: dict[tuple[str, str], int] = {}
+        analysis_review_count = 0
+        for item in review_frame.itertuples(index=False):
+            key = (str(item.source), str(item.product_id))
+            if not item.product_id or seen_products.get(key, 0) < analysis_max_reviews_per_product:
+                analysis_review_count += 1
+                if item.product_id:
+                    seen_products[key] = seen_products.get(key, 0) + 1
 
     category_names = list(categories.get("category_name", pd.Series(dtype=str))) if not categories.empty else []
     category_names = list(dict.fromkeys([name for name in category_names if name]))
@@ -73,9 +84,10 @@ def build_report(
     evidence = pd.read_parquet(evidence_path) if evidence_path and evidence_path.exists() else pd.DataFrame()
     evidence_counts: dict[str, int] = {}
     if not evidence.empty and not review_frame.empty:
-        product_categories = dict(zip(review_frame["product_id"], review_frame["category"]))
+        mapped_products = review_frame[review_frame["mapped"] & review_frame["product_id"].ne("")].drop_duplicates("product_id")
+        product_categories = dict(zip(mapped_products["product_id"], mapped_products["category"]))
         review_evidence = evidence[evidence.get("source_type", "").eq("KOREAN_HFF_RAW_REVIEW")].copy()
-        review_evidence["category_from_mapping"] = review_evidence.get("product_ref", "").map(product_categories)
+        review_evidence["category_from_mapping"] = review_evidence.get("product_ref", "").astype(str).map(product_categories)
         evidence_counts = review_evidence.dropna(subset=["category_from_mapping"]).groupby("category_from_mapping").size().to_dict()
 
     output_rows = []
@@ -95,7 +107,7 @@ def build_report(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     coverage.to_csv(output.with_suffix(".csv"), index=False, encoding="utf-8-sig")
-    lines = ["# 한국 건강기능식품 Review Category Coverage", "", "기준: Raw review snapshot을 보존한 상태에서 Product/Category 연결이 확인된 건만 매핑 카테고리에 집계한다. 연결되지 않은 상품은 별도 행으로 남긴다.", "", f"- 총 Raw Review: {len(review_frame)}", f"- 매핑 성공 Review: {int(review_frame['mapped'].sum()) if not review_frame.empty else 0}", f"- Unique Product: {review_frame['product_id'].replace('', pd.NA).dropna().nunique() if not review_frame.empty else 0}", f"- Review Source 수: {review_frame['source'].nunique() if not review_frame.empty else 0}", "", "## Category Coverage", "| Service Category | Review | Unique Product | Source | Mapped Review | Facet Evidence | Band |", "|---|---:|---:|---:|---:|---:|---|"]
+    lines = ["# 한국 건강기능식품 Review Category Coverage", "", "기준: Raw review snapshot을 보존한 상태에서 Product/Category 연결이 확인된 건만 매핑 카테고리에 집계한다. 연결되지 않은 상품은 별도 행으로 남긴다.", "", f"- 총 Raw Review: {len(review_frame)}", f"- Analysis Review: {analysis_review_count} (상품별 상한: {analysis_max_reviews_per_product or '없음'})", f"- 매핑 성공 Review: {int(review_frame['mapped'].sum()) if not review_frame.empty else 0}", f"- Unique Product: {review_frame['product_id'].replace('', pd.NA).dropna().nunique() if not review_frame.empty else 0}", f"- Review Source 수: {review_frame['source'].nunique() if not review_frame.empty else 0}", "", "## Category Coverage", "| Service Category | Review | Unique Product | Source | Mapped Review | Facet Evidence | Band |", "|---|---:|---:|---:|---:|---:|---|"]
     for row in output_rows:
         lines.append(f"| {row['service_category_name']} | {row['review_count']} | {row['unique_product_count']} | {row['unique_source_count']} | {row['mapped_review_count']} | {row['facet_evidence_count']} | {row['coverage_band']} |")
     lines += ["", "## Product Concentration", "| Source | Category | Reviews | Products | Median/Product | Max/Product | Top 1 | Top 5 | Top 10 |", "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
@@ -112,6 +124,7 @@ if __name__ == "__main__":
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--categories", type=Path, required=True)
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--analysis-max-reviews-per-product", type=int, default=None)
     parser.add_argument("--output", type=Path, default=Path("reports/hff_review_category_coverage.md"))
     args = parser.parse_args()
-    print(build_report(args.review, args.mapping, args.categories, args.evidence, args.output))
+    print(build_report(args.review, args.mapping, args.categories, args.evidence, args.output, args.analysis_max_reviews_per_product))

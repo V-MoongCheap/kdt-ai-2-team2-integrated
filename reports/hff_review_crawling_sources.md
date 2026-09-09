@@ -5,11 +5,11 @@
 공개 리뷰, robots.txt, 공식 약관, 정상 HTTP 접근성을 함께 확인했다. 일반적인 저작권 문구는 자동수집 금지로 보지 않았고, robots 차단·자동화 금지 약관·공개 원문 미확인은 명시적인 BLOCKED 사유로 기록했다.
 
 ## 요약
-- 조사 후보: 20곳
+- 조사 후보: 25곳
 - GREEN: 2곳
-- BLOCKED: 18곳
+- BLOCKED: 23곳
 - CONDITIONAL: 0곳
-- Raw Review Pilot: GREEN 후보인 뉴트리미에서 423건 확보(500건 목표, 공개 후기 종료).
+- Raw Review: 뉴트리미 공개 Pagination에서 423건 확보. 고정 3,000/5,000건을 목표로 삼지 않으며 신규 공개분만 증분 수집한다.
 - Pilot Source: nutrime
 - Pilot Review 수: 423
 - Pilot Review Text Usable Rate: 100%
@@ -43,6 +43,11 @@
 | dong_a_health | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 공식 건강제품 판매 후보이나 공개 리뷰 수집 경로와 정책 근거가 이번 조사에서 확인되지 않음. |
 | hy_himoon | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 건기식 전문 브랜드 후보이나 공식몰 리뷰 원문·상품 연결·정책 확인이 부족함. |
 | cj_wellcare | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 건기식 공식몰 후보이나 공개 리뷰 수집 가능성과 정책을 이번 조사에서 완결하지 못함. |
+| rockpid | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 공식몰 후보이나 공개 Raw Review와 상품 연결·정책을 이번 조사에서 완결 확인하지 못함. |
+| hiwell_korea | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 공식몰 후보이나 공개 Raw Review와 정상 수집 정책을 검증하지 못함. |
+| naturemade_korea | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 공식 온라인스토어 후보이나 한국 공개 Review 원문과 수집 정책 근거가 부족함. |
+| more_nature | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 공식몰 후보이나 공개 Review 원문·상품 연결·정책 확인이 완결되지 않음. |
+| vitamin_village | NOT_CONFIRMED | YES | PARTIAL | PARTIAL | NOT_CONFIRMED | UNCLEAR | UNKNOWN | UNKNOWN | NO | BLOCKED_UNVERIFIABLE_POLICY | 공식 전문몰 후보이나 공개 Review를 정상 수집할 수 있는지 확인하지 못함. |
 
 ## 직접 확인 근거
 - GNM robots: `Allow: /`, `Allow: /product/`이나 `Disallow: /*?*page=` 및 `Disallow: /product/*?*page=`가 있어 100건 페이지네이션 경로는 차단됨.
@@ -75,8 +80,13 @@
 - `dong_a_health`: https://www.dapharm.com/
 - `hy_himoon`: https://www.hy.co.kr/
 - `cj_wellcare`: https://www.cjwellcare.com/
+- `rockpid`: https://rockpid.com/
+- `hiwell_korea`: https://hiwellkorea.com/
+- `naturemade_korea`: https://www.naturemade.co.kr/
+- `more_nature`: https://morenature.co.kr/
+- `vitamin_village`: https://vitaminvillage.co.kr/
 
 ## 다음 단계
-1. GREEN 후보는 100건에서 멈추고 품질 지표를 검토한다.
-2. 403·429·CAPTCHA·Challenge가 발생하면 즉시 중단한다.
+1. GREEN Source는 짧은 Pilot으로 접근성을 확인한 뒤 정상 공개 Pagination 범위까지 raw를 증분 수집한다.
+2. 403·429·CAPTCHA·Challenge가 발생하면 즉시 중단하고 우회하지 않는다.
 3. 수집 데이터에는 작성자명·닉네임·IP를 저장하지 않고, 의료효과 표현은 Facet 후보에서 제외한다.
