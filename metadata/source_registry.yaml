@@ -136,3 +136,115 @@ sources:
     robots_url: https://nutridday.com/robots.txt
     terms_url: https://nutridday.com/member/agreement.html
     retrieved_at: 2026-09-08
+  - source_id: funeat_reviews
+    source_name: Funeat public reviews candidate
+    provider: Funeat
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://funeat.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 공식몰과 리뷰 존재 정황은 확인했으나 리뷰 원문·상품 연결·정책 검증이 완결되지 않아 수집하지 않음.
+  - source_id: zkliving_reviews
+    source_name: ZK Living public reviews candidate
+    provider: ZK Living
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://zkliving.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 건기식 전문몰과 리뷰 기능은 확인했으나 정상 수집 경로·약관·robots 검증이 완결되지 않음.
+  - source_id: kolon_health_reviews
+    source_name: Kolon Health public reviews candidate
+    provider: Kolon Health
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.kolonhealth.com/goods/goods_list.php?cateCd=019002
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 상품 리뷰 수는 확인했지만 건기식 범위 필터와 자동수집 정책을 완결 검증하지 못함.
+  - source_id: kgc_cheongkwanjang_reviews
+    source_name: KGC CheongKwanJang public reviews candidate
+    provider: KGC
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.kgc.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 공식 브랜드몰 후보이나 공개 리뷰 원문과 정상 수집 정책 근거를 확인하지 못함.
+  - source_id: pulmuone_health_reviews
+    source_name: Pulmuone Health public reviews candidate
+    provider: Pulmuone Health
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.pulmuone-lohas.com/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 건기식 브랜드 후보이나 공식 리뷰 원문과 상품 연결을 검증하지 못함.
+  - source_id: dong_a_health_reviews
+    source_name: Dong-A Health public reviews candidate
+    provider: Dong-A Pharmaceutical
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.dapharm.com/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 건강제품 판매 후보이나 공개 리뷰 수집 경로와 정책 근거를 확인하지 못함.
+  - source_id: hy_himoon_reviews
+    source_name: hy Himoon public reviews candidate
+    provider: hy
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.hy.co.kr/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 건기식 브랜드 후보이나 공식몰 리뷰 원문과 상품 연결을 검증하지 못함.
+  - source_id: cj_wellcare_reviews
+    source_name: CJ Wellcare public reviews candidate
+    provider: CJ Wellcare
+    source_type: KOREAN_HFF_PURCHASED_REVIEW
+    source_url: https://www.cjwellcare.com/
+    acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
+    access_status: BLOCKED_UNVERIFIABLE_POLICY
+    cost: FREE_PAGE_ACCESS
+    login_required: unknown
+    automated_collection_status: BLOCKED_UNVERIFIABLE_POLICY
+    internal_analysis_status: BLOCKED
+    redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
+    retrieved_at: 2026-09-09
+    notes: 건기식 공식몰 후보이나 공개 리뷰 수집 가능성과 정책을 완결 검증하지 못함.

@@ -248,7 +248,7 @@ def _review_sentences(text: str) -> list[str]:
     return [part.strip() for part in re.split(r"(?<=[.!?。？！])|\n+", _text(text)) if part.strip()]
 
 
-def build_review_evidence(path: Path, source: str) -> tuple[pd.DataFrame, dict[str, int]]:
+def build_review_evidence(path: Path, source: str, max_reviews_per_product: int | None = None) -> tuple[pd.DataFrame, dict[str, int]]:
     """Convert an authorized local Review JSONL snapshot into candidate evidence."""
     if not path.exists():
         return _empty(), {"review_count": 0, "mapped_count": 0, "medical_outcome_sentence_count": 0, "facet_expression_candidate_count": 0}
@@ -261,9 +261,20 @@ def build_review_evidence(path: Path, source: str) -> tuple[pd.DataFrame, dict[s
                 continue
     rows: list[dict[str, Any]] = []
     medical_count = 0
+    sampled_product_counts: dict[str, int] = {}
+    sampled_review_count = 0
     for item in reviews:
         review_id = _text(item.get("source_review_id"))
         product_id = _text(item.get("source_product_id"))
+        if max_reviews_per_product is not None:
+            if max_reviews_per_product < 1:
+                raise ValueError("max_reviews_per_product must be positive")
+            if product_id:
+                current_count = sampled_product_counts.get(product_id, 0)
+                if current_count >= max_reviews_per_product:
+                    continue
+                sampled_product_counts[product_id] = current_count + 1
+            sampled_review_count += 1
         text = " ".join(_text(item.get(key, "")) for key in ("review_title", "review_text") if _text(item.get(key, "")))
         for sentence_index, sentence in enumerate(_review_sentences(text)):
             if REVIEW_MEDICAL_TERMS.search(sentence):
@@ -279,6 +290,8 @@ def build_review_evidence(path: Path, source: str) -> tuple[pd.DataFrame, dict[s
         "mapped_count": sum(bool(_text(item.get("source_product_id"))) for item in reviews),
         "medical_outcome_sentence_count": medical_count,
         "facet_expression_candidate_count": len(evidence),
+        "sampled_review_count": sampled_review_count if max_reviews_per_product is not None else len(reviews),
+        "max_reviews_per_product": max_reviews_per_product or 0,
     }
 
 
@@ -393,7 +406,7 @@ def build_audit(evidence: pd.DataFrame, aggregate: pd.DataFrame, source_status: 
     return "\n".join(lines) + "\n"
 
 
-def run_pipeline(root: Path, output_dir: Path, enable_reviews: bool = False) -> dict[str, Any]:
+def run_pipeline(root: Path, output_dir: Path, enable_reviews: bool = False, max_reviews_per_product: int | None = None) -> dict[str, Any]:
     """Run the Korean HFF evidence pipeline without synthetic or foreign ecommerce facts."""
     del enable_reviews
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -442,9 +455,9 @@ def run_pipeline(root: Path, output_dir: Path, enable_reviews: bool = False) -> 
     }
     for source, paths in review_paths.items():
         path = paths[-1] if paths else root / f"data/raw/reviews/{source}/missing.jsonl"
-        review_frame, review_stats = build_review_evidence(path, source)
+        review_frame, review_stats = build_review_evidence(path, source, max_reviews_per_product=max_reviews_per_product)
         evidence.append(review_frame)
-        statuses.append({"source": source, "source_type": "KOREAN_HFF_RAW_REVIEW", "status": "AVAILABLE" if review_stats["review_count"] else "BLOCKED_OR_EMPTY", "rows": len(review_frame), "review_count": review_stats["review_count"], "mapped_count": review_stats["mapped_count"], "medical_outcome_sentence_count": review_stats["medical_outcome_sentence_count"]})
+        statuses.append({"source": source, "source_type": "KOREAN_HFF_RAW_REVIEW", "status": "AVAILABLE" if review_stats["review_count"] else "BLOCKED_OR_EMPTY", "rows": len(review_frame), "review_count": review_stats["review_count"], "sampled_review_count": review_stats["sampled_review_count"], "mapped_count": review_stats["mapped_count"], "medical_outcome_sentence_count": review_stats["medical_outcome_sentence_count"]})
 
     unified = pd.concat(evidence, ignore_index=True) if evidence else _empty()
     aggregate = aggregate_evidence(unified)
