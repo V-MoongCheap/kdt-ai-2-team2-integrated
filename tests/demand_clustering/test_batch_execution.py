@@ -268,9 +268,25 @@ def test_rejects_runtime_threshold_below_backend_minimum() -> None:
         )
 
 
-def test_rejects_proposal_for_demand_that_skipped_original_path() -> None:
+@pytest.mark.parametrize(
+    ("demand_id", "original_catalog_id", "error_message"),
+    [
+        (9, 505, "outside the eligible refreshed batch"),
+        (7, 303, "previously rejected board"),
+    ],
+)
+def test_invalid_substitute_proposal_stops_before_backend_call(
+    demand_id: int,
+    original_catalog_id: int,
+    error_message: str,
+) -> None:
     calls: list[str] = []
     initial, refreshed = input_batches()
+    refreshed = ClusteringInputBatch(
+        refreshed.demands,
+        refreshed.boards,
+        rejected_demand_board_pairs=frozenset({(7, 9001)}),
+    )
     reader = TwoReadInputReader(initial, refreshed, calls)
 
     def post_formation(
@@ -296,14 +312,18 @@ def test_rejects_proposal_for_demand_that_skipped_original_path() -> None:
         *,
         as_of: datetime,
     ) -> list[dict[str, int]]:
+        assert inputs.rejected_demand_board_pairs == frozenset({(7, 9001)})
         return [{
-            "demandId": 9,
-            "originalCatalogId": 505,
+            "demandId": demand_id,
+            "originalCatalogId": original_catalog_id,
             "substituteCatalogId": 202,
             "demandBoardId": 9001,
         }]
 
-    with pytest.raises(ValueError, match="outside the eligible refreshed batch"):
+    def unexpected_post_substitutes(*args, **kwargs):
+        pytest.fail("invalid proposals must not reach Backend API 2")
+
+    with pytest.raises(ValueError, match=error_message):
         execute_demand_clustering_batch(
             reader,
             invalid_planner,
@@ -313,4 +333,5 @@ def test_rejects_proposal_for_demand_that_skipped_original_path() -> None:
             formation_rule_version="board-formation-v1",
             substitute_rule_version="substitute-admission-v1",
             formation_plan_poster=post_formation,
+            substitute_plan_poster=unexpected_post_substitutes,
         )

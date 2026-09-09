@@ -270,3 +270,74 @@ def test_callable_output_projects_to_backend_offer_contract() -> None:
         "substituteCatalogId": 201,
         "demandBoardId": 31,
     }]
+
+
+def test_rejection_excludes_only_the_exact_demand_board_pair() -> None:
+    profiles = pd.DataFrame([
+        profile(101, ["protein"], name="원상품", form="정"),
+        profile(201, ["protein"], name="후보 상품", form="정"),
+    ])
+    result = planner(profiles).plan(
+        ClusteringInputBatch(
+            demands=(demand(1, 101, ""), demand(2, 101, "")),
+            boards=(
+                board(31, 201, participant_count=20),
+                board(32, 201, participant_count=5),
+            ),
+            rejected_demand_board_pairs=frozenset({(1, 31)}),
+        ),
+        as_of=NOW,
+    )
+
+    # A different board with the same catalog remains eligible for demand 1;
+    # demand 2 may still receive the board that demand 1 rejected.
+    assert [(row["demandId"], row["demandBoardId"]) for row in result.proposals] == [
+        (1, 32), (2, 31),
+    ]
+
+
+def test_no_offer_when_all_candidate_boards_were_rejected() -> None:
+    profiles = pd.DataFrame([
+        profile(101, ["protein"], name="원상품", form="정"),
+        profile(201, ["protein"], name="후보 상품", form="정"),
+    ])
+    result = planner(profiles).plan(
+        ClusteringInputBatch(
+            demands=(demand(1, 101, ""),),
+            boards=(board(31, 201), board(32, 201)),
+            rejected_demand_board_pairs=frozenset({(1, 31), (1, 32)}),
+        ),
+        as_of=NOW,
+    )
+
+    assert result.proposals == ()
+    assert result.decisions[0].selected_board is None
+
+
+def test_rejected_board_is_excluded_before_semantic_preparation() -> None:
+    class Scorer:
+        def prepare(self, queries, passages):
+            assert queries == ("딸기맛 제품이면 좋겠어요.",)
+            assert len(passages) == 1
+            assert "허용 후보" in passages[0]
+            assert "거절 후보" not in passages[0]
+
+        def __call__(self, query, passage):
+            assert "거절 후보" not in passage
+            return 0.9
+
+    profiles = pd.DataFrame([
+        profile(101, ["protein"], name="원상품", form="정"),
+        profile(201, ["protein"], name="딸기맛 거절 후보", form="정"),
+        profile(202, ["protein"], name="허용 후보", form="정"),
+    ])
+    result = planner(profiles, text_similarity_scorer=Scorer()).plan(
+        ClusteringInputBatch(
+            demands=(demand(1, 101, "딸기맛 제품이면 좋겠어요."),),
+            boards=(board(31, 201, participant_count=100), board(32, 202)),
+            rejected_demand_board_pairs=frozenset({(1, 31)}),
+        ),
+        as_of=NOW,
+    )
+
+    assert result.proposals[0]["demandBoardId"] == 32

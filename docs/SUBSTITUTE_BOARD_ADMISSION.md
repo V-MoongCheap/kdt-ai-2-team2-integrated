@@ -126,6 +126,7 @@ Backend 행과 catalog profile의 명시적 join 지점이다.
 - Part A 상품도감 기준 profile·taxonomy 공급과 DB 입력 catalog ID 일치 확인
 - CPU E5 모델 파일 공급 및 버전 관리
 - 합의한 두 Backend 내부 API의 실제 연동·상태 재검증 확인
+- Backend `reject_history` 테이블 배포·거절 저장과 AI DB 계정의 SELECT 권한 확인
 - Parameter Store 키 주입 및 시간별 배치 배포
 
 relation 310개 승인과 오프라인 catalog embedding artifact 발행은 별도 평가 경로의
@@ -136,9 +137,36 @@ relation 310개 승인과 오프라인 catalog embedding artifact 발행은 별�
 `../src/moongcheap_ai/demand_clustering/README.md`를 참고한다.
 
 Backend와 합의한 거절 처리는 미만료 수요의 `UNASSIGNED` 복귀와 보드 연결 해제다.
-참가자 수는 변경하지 않으며 재제안은 허용한다. 현재 AI는 거절 이력을 반영하지 않아
-같은 보드가 다시 선택될 수 있다. 이미 거절한 보드·상품의 제외 기준과 이력 조회 방식은
-추가 협의 사항이다.
+참가자 수와 기존 보드는 유지한다. 신규 보드는 원상품 수요 최소 5건으로 생성하고,
+대체상품 수요는 생성된 보드에 제안한 뒤 수락 시에만 참가자로 확정한다.
+
+## 거절 이력에 따른 재제안 제외
+
+2026-09-09 Backend 협의와 갱신된 ERD 이미지 기준으로 MVP부터
+`reject_history`를 조회한다. 기존 ERD SQL에는 아직 이 테이블이 반영되지 않았다.
+
+| 컬럼 | 타입 | AI 사용 |
+| --- | --- | --- |
+| `demand_id` | BIGINT | 거절한 수요 ID |
+| `demand_board_id` | BIGINT | 그 수요가 거절한 보드 ID |
+| `created_at` | TIMESTAMPTZ | 기록 시각; AI 후보 제외에 시간 제한을 두지 않음 |
+
+AI는 현재 처리할 수요·활성 보드에 해당하는 이력을 한 번에 읽고, API 1 이후
+DB 재조회에서도 이력을 다시 읽는다. 실행 시작 이후 생긴 거절도 반영하기 위해
+`created_at <= plannedAt` 같은 과거 시각 제한을 적용하지 않는다.
+
+`(demand_id, demand_board_id)`가 이력에 있으면 해당 수요의 대체 후보에서
+임베딩 준비·순위 계산 전에 제외한다. 같은 상품의 다른 보드와 다른 수요의 추천은
+이 이력으로 제외하지 않는다. 모든 후보가 제외되면 대체 제안을 생성하지 않으며,
+해당 수요는 기존 유효기간 안에서 다음 배치의 원상품 경로부터 다시 검토한다.
+Backend API 2 전송 직전 검증에서도 이미 거절한 조합을 차단한다.
+운영 `ruleVersion`은 `substitute-admission-v2`다.
+
+테이블 생성·이력 저장·수요 상태 변경은 Backend 책임이다. 사용자 거절 시
+이력 저장과 `UNASSIGNED` 복귀·보드 연결 해제는 같은 트랜잭션에 반영해야 한다.
+AI 조회 이후의 동시 상태 변경까지 처리하려면 Backend API 2에서도 거절 이력을
+재검증해야 하며, 실제 연동에서 확인한다. AI는 이력을 쓰거나 삭제하지 않는다.
+이력 조회 오류는 실행 실패로 처리하며, 빈 이력으로 대체해 재추천하지 않는다.
 
 ## 5,000건 시간 배치 검증
 

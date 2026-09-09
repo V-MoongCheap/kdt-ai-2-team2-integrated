@@ -56,6 +56,10 @@ Job과의 중첩을 막는 전체 AI 잠금은 아니다. 또한 스케줄러 �
 | `SHARED_DATABASE_URL` | `ai-batch-reader-database` | `url` | SELECT 전용 PostgreSQL DSN; JDBC URL 아님 |
 | `BACKEND_INTERNAL_KEY` | `ai-backend-internal-key` | `internal-key` | Backend와 공유하는 `X-Internal-Key` 값 |
 
+AI DB 계정에는 `demand`, `demand_board`, `reject_history`의 SELECT 권한이 필요하다.
+`reject_history`는 Backend가 배포·기록하며, 거절한 수요·보드 조합은 재제안에서
+제외한다. 테이블 누락이나 권한 오류로 이력을 조회하지 못하면 배치가 실패한다.
+
 내부 키의 공급 경로는 **Parameter Store → 배포 환경의 Secret 동기화 → Kubernetes
 Secret → Pod 환경 변수 → 요청의 `X-Internal-Key` 헤더**다. 이 매니페스트에
 `secretKeyRef`를 쓰는 것만으로 Parameter Store와 자동 연결되지는 않는다.

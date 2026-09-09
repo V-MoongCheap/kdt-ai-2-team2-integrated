@@ -277,6 +277,8 @@ class ClaimIndexedSubstituteProposalPlanner:
             candidate_catalog_ids = set(lookup.candidate_catalog_ids)
             candidates = []
             for board in inputs.boards:
+                if (demand.id, board.id) in inputs.rejected_demand_board_pairs:
+                    continue
                 if str(board.catalog_id) not in candidate_catalog_ids:
                     continue
                 candidate_profile = self._profiles[board.catalog_id]

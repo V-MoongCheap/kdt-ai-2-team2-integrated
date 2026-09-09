@@ -101,7 +101,7 @@ runtime_filesystem:
       contents: "blobs/와 snapshots/<revision>/을 포함한 전체 모델 cache"
 
 external_dependencies:
-  - "Shared PostgreSQL (read-only)"
+  - "Shared PostgreSQL (SELECT on demand, demand_board, reject_history)"
   - "Backend formation-plans and substitute-offer-plans APIs"
   - "Versioned taxonomy, Part A catalog profile, and local CPU E5 model artifacts"
   - "AWS Parameter Store to Kubernetes Secret synchronization by the deployment environment"

@@ -57,6 +57,10 @@ AWS Parameter Store에서 Kubernetes Secret으로 공급한 뒤 Pod에 주입한
 Secret 동기화 구성은 기본 매니페스트에 포함하지 않는다. 앱은 AWS 자격 증명이나 직접적인 SSM 호출을
 요구하지 않는다. 실제 Secret 값은 이미지·Git·로그에 넣지 않는다.
 
+DB 조회 대상에는 `demand`, `demand_board`, `reject_history`가 포함된다.
+Backend가 거절 이력 테이블을 배포하고 사용자 거절을 저장해야 하며, AI 계정에
+해당 테이블의 SELECT 권한도 필요하다. 이력 조회 실패 시 배치를 중단한다.
+
 다음은 대상 환경에 맞는 artifact와 전용 환경 파일을 준비한 후 사용하는 **실제 배치 실행** 예시다.
 DB를 읽고 Backend 상태 변경 API를 호출하므로 smoke test로 사용하지 않는다.
 세 경로 변수에는 호스트의 절대 경로를 넣는다. `.env.demand-clustering`은 Git에 넣지 않는다.
@@ -147,6 +151,7 @@ docker run --rm --network none --read-only \
 | taxonomy | 테스트 fixture가 현재 profile의 16개 카테고리를 포함하며 runtime 로드 확인 | 배포에 사용할 profile·taxonomy 파일을 같은 release로 공급 |
 | 연결 설정 | 확인한 로컬 환경 파일과 실행 환경에 배치용 DB 주소·Backend 주소·내부 키 미설정 | 테스트 대상 주소와 SELECT 전용 DB 계정, 내부 키의 안전한 주입 |
 | Backend API | 합의한 두 API가 동작하는 배포 대상은 미확인 | 대상 환경에서 API 1·2 및 `X-Internal-Key` 계약 지원 여부 확인 |
+| 거절 이력 | 갱신 ERD 이미지 기준 `reject_history` 조회·후보 제외 구현 | 실제 테이블 배포, 거절과 상태 복귀의 원자적 저장, SELECT 권한 및 API 2의 동시성 재검증 확인 |
 
 상품도감과 catalog ID의 기준은 Part A이며 Part B가 별도 ID를 만들거나 Backend
 ERD 변경을 요구하지 않는다. 현재 Part A 입력 45,996건에서 분류 제외 277건을 빼면

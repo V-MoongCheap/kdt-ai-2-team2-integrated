@@ -275,8 +275,14 @@ def test_opens_autocommit_read_only_postgres(monkeypatch) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("rejected_board_ids", "expected_board_id"),
+    [((), 32), ((32,), 31), ((31, 32), None)],
+)
 def test_runs_complete_batch_with_fake_postgres_and_backend(
     tmp_path: Path,
+    rejected_board_ids: tuple[int, ...],
+    expected_board_id: int | None,
 ) -> None:
     paths = _artifact_paths(tmp_path)
     config = DemandClusteringJobConfig(
@@ -295,8 +301,13 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
     connection = FakeConnection([
         [_demand_row(1, 101), _demand_row(7, 303)],
         [board_101, board_202],
+        [],
         [_demand_row(7, 303)],
         [board_101, board_202],
+        [
+            {"demand_id": 7, "demand_board_id": board_id}
+            for board_id in rejected_board_ids
+        ],
     ])
     calls: list[str] = []
 
@@ -333,15 +344,17 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
         calls.append("substitute")
         assert backend_base_url == config.backend_base_url
         assert internal_key == config.backend_internal_key
-        assert request["proposals"] == [{
+        assert request["ruleVersion"] == "substitute-admission-v2"
+        expected_proposals = [] if expected_board_id is None else [{
             "demandId": 7,
             "expectedOriginalCatalogId": 303,
-            "substituteCatalogId": 202,
-            "demandBoardId": 32,
+            "substituteCatalogId": 202 if expected_board_id == 32 else 101,
+            "demandBoardId": expected_board_id,
         }]
+        assert request["proposals"] == expected_proposals
         return BackendPlanApplyResult(
             status="APPLIED",
-            applied_count=1,
+            applied_count=len(expected_proposals),
             already_applied_count=0,
             stale_rejected_count=0,
         )
@@ -356,10 +369,12 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
 
     assert calls == ["formation", "substitute"]
     assert connection.closed is True
-    assert len(connection.cursor_instance.executions) == 4
+    assert len(connection.cursor_instance.executions) == 6
     assert "batchId" not in result.to_dict()
     assert result.e5_cache_summary["modelLoaded"] is False
-    assert result.to_dict()["substitution"]["proposalCount"] == 1
+    assert result.to_dict()["substitution"]["proposalCount"] == (
+        0 if expected_board_id is None else 1
+    )
 
     # Even another invocation at the same timestamp must reread current state.
     next_connection = FakeConnection([[], [board_101, board_202]] * 2)

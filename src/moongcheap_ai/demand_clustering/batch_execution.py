@@ -121,6 +121,11 @@ def _validate_substitute_proposals(
             raise ValueError(
                 f"substitute proposal references an inactive board: {board_id}"
             )
+        if (demand_id, board_id) in inputs.rejected_demand_board_pairs:
+            raise ValueError(
+                "substitute proposal references a previously rejected board: "
+                f"demand {demand_id}, board {board_id}"
+            )
         if proposal.get("substituteCatalogId") != board.catalog_id:
             raise ValueError(f"substitute proposal board catalog mismatch: {board_id}")
 
@@ -234,6 +239,7 @@ def execute_demand_clustering_batch(
             )
         ),
         boards=refreshed.boards,
+        rejected_demand_board_pairs=refreshed.rejected_demand_board_pairs,
     )
     if input_validator is not None:
         input_validator(substitute_inputs)
