@@ -84,6 +84,10 @@ class PostgreSQLClusteringInputReaderTest(unittest.TestCase):
 
         self.assertEqual(connection.cursor_calls, 1)
         self.assertEqual([demand.id for demand in batch.demands], [1001])
+        self.assertEqual(
+            batch.demands[0].extra_requirement,
+            "캡슐형이면 좋겠어요.",
+        )
         self.assertEqual([board.id for board in batch.boards], [3001])
         self.assertEqual(
             batch.demands[0].created_at.utcoffset(),
@@ -104,7 +108,9 @@ class PostgreSQLClusteringInputReaderTest(unittest.TestCase):
         board_sql, board_params = cursor.executions[1]
         self.assertIn('"pay_method_id" IS NOT NULL', demand_sql)
         self.assertIn('"demand_board_id" IS NULL', demand_sql)
-        self.assertIn('"processed_at" IS NOT NULL', demand_sql)
+        self.assertIn('"extra_requirement"', demand_sql)
+        self.assertNotIn('"label" IS NOT NULL', demand_sql)
+        self.assertNotIn('"processed_at" IS NOT NULL', demand_sql)
         self.assertIn("INTERVAL '2 days'", demand_sql)
         self.assertNotIn("FOR UPDATE", demand_sql)
         self.assertIn('"sale_end_at" > %(as_of)s', board_sql)

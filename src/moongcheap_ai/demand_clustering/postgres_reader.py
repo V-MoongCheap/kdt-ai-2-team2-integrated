@@ -18,6 +18,7 @@ SELECT
     "desired_price_min",
     "desired_price_max",
     "quantity",
+    "extra_requirement",
     "is_substitutable",
     "status",
     "label",
@@ -29,9 +30,6 @@ FROM "demand"
 WHERE "status" = %(status)s
   AND "demand_board_id" IS NULL
   AND "pay_method_id" IS NOT NULL
-  AND "label" IS NOT NULL
-  AND btrim("label") <> ''
-  AND "processed_at" IS NOT NULL
   AND "created_at" > %(as_of)s - INTERVAL '2 days'
   AND "desire_end_at" > %(as_of)s
 ORDER BY "catalog_id", "id"

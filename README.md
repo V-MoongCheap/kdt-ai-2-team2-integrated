@@ -21,8 +21,10 @@
 
 ## 시스템 담당 범위
 
-- AI와 Backend는 동일한 PostgreSQL을 사용합니다.
-- AI는 Backend가 생성한 원본 Demand를 조회하고 AI 파생 결과만 기록합니다.
+- AI와 Backend는 동일한 PostgreSQL의 원본 데이터를 기준으로 사용합니다.
+- AI Batch는 필요한 Demand와 DemandBoard를 읽기 전용으로 조회하고,
+  생성·편입·대체 제안 계획 JSON을 Backend 내부 API로 전달합니다.
+- 상태 변경 DML, 잠금과 트랜잭션은 Backend가 담당합니다.
 - AI는 인증·권한, 원본 데이터, 수요·응찰·낙찰 상태를 관리하지 않습니다.
 - AI 전용 DB, 임의의 테이블/컬럼/상태 추가를 전제로 하지 않습니다.
 - Consumer RAG 챗봇은 현재 MVP에서 제외합니다.
@@ -31,10 +33,33 @@
 ## 저장소 구조
 
 - `src/moongcheap_ai`: AI 서비스 및 데이터 파이프라인 구현
-- `docs`: AI 설계, Facet taxonomy, API contract, 평가 및 실험 문서
+- `docs`: AI 서비스 설계, Facet taxonomy 및 API contract
+- `docker`, `k8s`: 수요 클러스터링 이미지와 Kubernetes 기본 실행 계약
 - `.github`: PR/이슈 템플릿 및 협업 설정
 
 ## 개발 작업 흐름
+
+로컬·CI에서 같은 의존성 정의와 `uv.lock`을 사용합니다. Python 3.12 이상이
+필요하며, 수요 클러스터링 컨테이너는 Python 3.13 / Linux CPU 환경을 사용합니다.
+
+```bash
+uv sync --locked --extra data --extra dev
+uv run --no-sync pytest
+```
+
+기존 `pip install -r requirements.txt`도 같은 extra를 설치하지만 `uv.lock`을
+적용하지는 않습니다. CPU E5도 사용할 개발 환경은
+`uv sync --locked --extra data --extra dev --extra embeddings`로 설치합니다.
+기본 테스트는 외부 DB·Backend·LLM·모델 다운로드 없이 실행합니다.
+의존성 정의와 Ruff 규칙은 `pyproject.toml`, 해결된 버전은 `uv.lock`에서 관리합니다.
+
+수요 클러스터링 운영 설정과 실패 후 다음 배치 처리 정책은
+[배치 README](src/moongcheap_ai/demand_clustering/README.md)를 참고하세요.
+이미지 빌드, 모델·데이터 마운트 및 인프라 전달 조건은
+[컨테이너 실행 안내](docs/DEMAND_CLUSTERING_CONTAINER.md)에 정리했습니다.
+CronJob·환경 변수·Secret·AI 전용 노드 설정은
+[Kubernetes 안내](k8s/README.md)를 참고하세요. CI에서는 `kubectl`을 준비한 뒤
+`tools/verify_kubernetes_manifests.sh`도 실행합니다. 실제 클러스터 접속은 필요 없습니다.
 
 1. `main`에서 작업 브랜치를 생성합니다.
 2. 작업 Branch에서 기존 AI Commit Convention을 따릅니다.
