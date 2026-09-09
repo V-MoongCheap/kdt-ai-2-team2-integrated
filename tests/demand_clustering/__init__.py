@@ -1,1 +1,1 @@
-"""Demand clustering tests."""
+"""Tests for the demand clustering package."""
