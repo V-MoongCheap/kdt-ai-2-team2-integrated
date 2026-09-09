@@ -335,3 +335,18 @@ sources:
     redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
     retrieved_at: 2026-09-09
     notes: 상품 리뷰 수는 확인했지만 건기식 범위 필터와 자동수집 정책을 완결 검증하지 못함.
+  - source_id: naver_shopping_expression_reference
+    source_name: Naver Shopping Corpus expression reference
+    provider: bab2min/corpus
+    source_type: KOREAN_SHOPPING_REVIEW_EXPRESSION_REFERENCE
+    source_url: https://github.com/bab2min/corpus/blob/master/sentiment/naver_shopping.txt
+    acquisition_method: PUBLIC_GITHUB_DOWNLOAD
+    access_status: AVAILABLE_LOCAL_FILE
+    cost: FREE_PUBLIC_DATA
+    login_required: false
+    automated_collection_status: NOT_APPLICABLE
+    internal_analysis_status: EXPRESSION_REFERENCE_ONLY
+    redistribution_status: INTERNAL_ONLY_NO_RAW_REDISTRIBUTION
+    retrieved_at: 2026-09-09
+    raw_path: data/raw/references/bab2min_naver_shopping/naver_shopping.txt
+    notes: 200000 Korean shopping review rows. The file contains rating and review text only; no product ID, product name, category, brand, or date. It is not HFF evidence and is excluded from facet salience counts.
