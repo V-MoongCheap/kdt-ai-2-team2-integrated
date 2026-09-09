@@ -1,0 +1,75 @@
+{
+  "bundle_version": "mvp-shared-v2.2",
+  "purpose": "A/B/C local smoke handoff; no secrets or raw corpus",
+  "source_taxonomy": "config/facet_taxonomy_v2_2.json",
+  "runtime_mode": "Rule/Alias-only; LABELING_LLM_FALLBACK_ENABLED=false",
+  "files": [
+    {
+      "path": ".env.example",
+      "sha256": "1f5458aedc68ca3f06b40606238765bd4567e7b7c69e2589d65af29c5c31fe20",
+      "bytes": 813
+    },
+    {
+      "path": "A_B_WORK_SUMMARY.md",
+      "sha256": "f6360cfeb5aece7a807f02408cbe80260a9984ea883fb26653bc3610949d0661",
+      "bytes": 528
+    },
+    {
+      "path": "C_SMOKE_TEST.md",
+      "sha256": "e87a5c67593eafb9f8f68215209eb5624e59967f9dd1644b358765327ef65a3f",
+      "bytes": 726
+    },
+    {
+      "path": "README.md",
+      "sha256": "781c68ff9971dc036f75b12b903a7b2b999e57b17144e0efea72b616cc79f255",
+      "bytes": 1389
+    },
+    {
+      "path": "config/demand_constraint_aliases.json",
+      "sha256": "2d2105d0f68e7e7f2e832ce730f6ff593ca281169eb9e9ddfbbabba3e37222a2",
+      "bytes": 2160
+    },
+    {
+      "path": "config/demand_constraint_rules.json",
+      "sha256": "ad996a433cae82c6b39867e028650cf3e5e49b1f5714c9b98824e2492f71fbda",
+      "bytes": 7423
+    },
+    {
+      "path": "config/facet_taxonomy_v2_2.json",
+      "sha256": "5a8b693d4517053961e3f2507dd4a6b64c09c37e2b122ce07ada483fbbbef957",
+      "bytes": 85796
+    },
+    {
+      "path": "config/model1_aliases_reviewed_v2.json",
+      "sha256": "ee14153e1cbe998d4b71d226fb52665567bbf12f6db1e3fdd4bce6173ea39789",
+      "bytes": 8175
+    },
+    {
+      "path": "config/taxonomy_value_crosswalk_v2.json",
+      "sha256": "f70c8b3518d1ddfcf48645bf9caf05aa23e4e589be3291287541ae7640c1bf38",
+      "bytes": 6400
+    },
+    {
+      "path": "smoke/demands_v2_2.csv",
+      "sha256": "d1ed9ac0d265fd8cffd86bc14ff84d3fbd39d4c28571a4b01fb4fe130013f11a",
+      "bytes": 13007
+    },
+    {
+      "path": "smoke/product_facets_smoke.csv",
+      "sha256": "24520856785c7f69df6e5c7856bf6af6c579b8785a4d586d47ef5f199641fed7",
+      "bytes": 1668
+    },
+    {
+      "path": "smoke/seller_offers_smoke.csv",
+      "sha256": "45b8fa277739a7dcbfd345eb11ff3f0d8b66aa388e2bbc61af25245f78bb69e7",
+      "bytes": 178044
+    }
+  ],
+  "production_artifacts_not_included": [
+    "PostgreSQL Demand data",
+    "Backend internal key",
+    "E5 model directory",
+    "full product facet mapping CSV",
+    "full seller offer corpus"
+  ]
+}
