@@ -78,8 +78,8 @@ sources:
     source_url: https://ckdhcmall.co.kr/brandProductList.do?idx=43&pidx=1
     acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
     access_status: GREEN
-    automated_collection_status: GREEN_PRELIGHT
-    internal_analysis_status: CONDITIONAL_PILOT_NOT_SELECTED
+    automated_collection_status: BLOCKED_NON_JSON_REVIEW_RESPONSE
+    internal_analysis_status: BLOCKED_PILOT
     redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
     robots_url: https://ckdhcmall.co.kr/robots.txt
     terms_url: https://ckdhcmall.co.kr/policy.do?policyType=A004
@@ -91,7 +91,7 @@ sources:
     source_url: https://www.nutrime.co.kr/board/?id=goods_review
     acquisition_method: PUBLIC_HTML_LOW_RATE_ONLY
     access_status: GREEN
-    automated_collection_status: GREEN_PILOT_100_COMPLETED
+    automated_collection_status: GREEN_PILOT_423_COMPLETED
     internal_analysis_status: CONDITIONAL
     redistribution_status: NOT_ALLOWED_WITHOUT_PERMISSION
     robots_url: https://www.nutrime.co.kr/robots.txt

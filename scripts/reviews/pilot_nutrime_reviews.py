@@ -67,8 +67,8 @@ def extract_detail(body: str) -> dict[str, str]:
 
 
 def run_pilot(output: Path, limit: int = 100, delay_seconds: float = 0.5) -> dict[str, object]:
-    if not 1 <= limit <= 100:
-        raise ValueError("Pilot limit must be between 1 and 100")
+    if not 1 <= limit <= 500:
+        raise ValueError("Pilot limit must be between 1 and 500")
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "ko-KR,ko;q=0.9"})
     rows: list[dict[str, object]] = []
@@ -77,7 +77,7 @@ def run_pilot(output: Path, limit: int = 100, delay_seconds: float = 0.5) -> dic
     stop_reason = "LIMIT_REACHED"
     previous_page_ids: set[str] = set()
     retrieved_at = datetime.now(timezone.utc).isoformat()
-    while len(rows) < limit and page <= 100:
+    while len(rows) < limit and page <= 500:
         list_url = f"{BASE_URL}/board/?{urlencode({'id': 'goods_review', 'page': page})}"
         response = session.get(list_url, timeout=20)
         if response.status_code in (403, 429):

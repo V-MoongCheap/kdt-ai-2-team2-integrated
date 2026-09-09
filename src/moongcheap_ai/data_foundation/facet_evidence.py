@@ -45,7 +45,8 @@ SOURCE_LICENSES = {
     "kuaisearch": ("https://huggingface.co/datasets/benchen4395/KuaiSearch", "MIT"),
     "naver_shopping_insight": ("https://api.ncloud-docs.com/docs/naver-api-hub-shopping-insight-keywords", "SEE_TERMS"),
     "lgu_hff": ("", "UNKNOWN"), "korean_consumer_aggregate": ("", "UNKNOWN"),
-    "aihub": ("", "UNKNOWN"),
+    "aihub": ("", "UNKNOWN"), "nutrime": ("https://www.nutrime.co.kr/board/?id=goods_review", "INTERNAL_ONLY_PUBLIC_SOURCE"),
+    "chongkundang": ("https://ckdhcmall.co.kr/brandProductList.do?idx=43&pidx=1", "INTERNAL_ONLY_PUBLIC_SOURCE"),
 }
 
 
@@ -228,6 +229,59 @@ def build_naver_trends(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=UNIFIED_COLUMNS) if rows else _empty()
 
 
+REVIEW_MEDICAL_TERMS = re.compile(r"효과가 있다|효과 봤|치료|완치|질환|병이|통증이 좋아|면역력이 좋아|혈압이 내려|혈당이 내려|medical|diagnos|cure|treat", re.I)
+REVIEW_ATTRIBUTE_PATTERNS = {
+    "product_form": [("tablet", r"정제|알약|tablet"), ("capsule", r"캡슐|capsule"), ("powder", r"분말|가루|powder"), ("liquid", r"액상|액체|liquid"), ("stick", r"스틱|stick")],
+    "tablet_size": [("small", r"알이 작|작은 알|작아서|작은 정"), ("large", r"알이 크|큰 알|커서")],
+    "swallowability": [("easy", r"목넘김이 편|삼키기 편|먹기 편"), ("difficult", r"목넘김이 어렵|삼키기 어렵")],
+    "taste": [("sweet", r"달콤|달다|단맛|sweet"), ("bitter", r"쓰다|쓴맛|bitter"), ("aftertaste", r"끝맛|뒷맛|aftertaste")],
+    "odor": [("fishy", r"비린내|비린|fishy"), ("low_odor", r"냄새가 약|냄새가 거의"), ("odorless", r"무취|냄새가 없다")],
+    "intake_frequency": [("once_daily", r"하루 한 번|하루에 한 번|1일 1회"), ("multiple_daily", r"하루 두 번|하루에 여러 번|1일 2회")],
+    "intake_convenience": [("convenient", r"간편|편리|챙겨먹기 편|휴대하기 편"), ("inconvenient", r"번거|귀찮|챙겨 먹기 힘")],
+    "packaging": [("individual_packaging", r"개별 포장|한 포씩|한팩"), ("portable", r"휴대|들고 다니")],
+    "mixability": [("easy_to_mix", r"잘 녹|잘 섞|녹이기 편"), ("hard_to_mix", r"안 녹|잘 안 섞")],
+    "ingredient_inclusion": [("ingredient_mentioned", r"비타민|미네랄|유산균|칼슘|오메가|콜라겐|단백질")],
+}
+
+
+def _review_sentences(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"(?<=[.!?。？！])|\n+", _text(text)) if part.strip()]
+
+
+def build_review_evidence(path: Path, source: str) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Convert an authorized local Review JSONL snapshot into candidate evidence."""
+    if not path.exists():
+        return _empty(), {"review_count": 0, "mapped_count": 0, "medical_outcome_sentence_count": 0, "facet_expression_candidate_count": 0}
+    reviews: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                reviews.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    rows: list[dict[str, Any]] = []
+    medical_count = 0
+    for item in reviews:
+        review_id = _text(item.get("source_review_id"))
+        product_id = _text(item.get("source_product_id"))
+        text = " ".join(_text(item.get(key, "")) for key in ("review_title", "review_text") if _text(item.get(key, "")))
+        for sentence_index, sentence in enumerate(_review_sentences(text)):
+            if REVIEW_MEDICAL_TERMS.search(sentence):
+                medical_count += 1
+                continue
+            for attribute, patterns in REVIEW_ATTRIBUTE_PATTERNS.items():
+                for value, pattern in patterns:
+                    if re.search(pattern, sentence, re.I):
+                        rows.append(_row(source, "KOREAN_HFF_RAW_REVIEW", f"{review_id}:{sentence_index}", product_id, "health-functional-food", sentence, attribute, value, term=sentence, license_status="INTERNAL_ONLY_PUBLIC_SOURCE"))
+    evidence = pd.DataFrame(rows, columns=UNIFIED_COLUMNS) if rows else _empty()
+    return evidence, {
+        "review_count": len(reviews),
+        "mapped_count": sum(bool(_text(item.get("source_product_id"))) for item in reviews),
+        "medical_outcome_sentence_count": medical_count,
+        "facet_expression_candidate_count": len(evidence),
+    }
+
+
 def read_optional_aggregate(directory: Path, source: str, source_type: str) -> pd.DataFrame:
     """Read user-provided aggregate CSV/Parquet without inventing missing data."""
     if not directory.exists():
@@ -280,11 +334,27 @@ def build_review_queue(aggregate: pd.DataFrame, evidence: pd.DataFrame) -> pd.Da
         evidence["text_raw"] = ""
     evidence["normalized_attribute"] = evidence["normalized_attribute"].map(lambda value: ATTRIBUTE_CANONICAL.get(str(value), str(value)))
     examples = evidence.groupby(["category", "normalized_attribute", "normalized_value"], dropna=False).agg(example_product_evidence=("text_raw", "first"), source_count=("source", "nunique")).reset_index()
-    examples = examples.rename(columns={"normalized_attribute": "facet_candidate", "normalized_value": "value_candidate"})
+    examples = examples.rename(columns={"normalized_attribute": "facet_candidate", "normalized_value": "value_candidate", "source_count": "evidence_source_count"})
     result = aggregate.merge(examples, on=["category", "facet_candidate", "value_candidate"], how="left")
     result["aliases"] = result["value_candidate"]
     result["review_decision"] = ""
     result["review_note"] = "Candidate evidence only; reviewer approval required"
+    for source in ("nutrime", "chongkundang"):
+        counts = evidence[evidence["source"].eq(source)].groupby(["category", "normalized_attribute", "normalized_value"]).size()
+        key = pd.MultiIndex.from_frame(result[["category", "facet_candidate", "value_candidate"]].rename(columns={"facet_candidate": "normalized_attribute", "value_candidate": "normalized_value"}))
+        result[f"{source}_review_evidence_count"] = [int(counts.get(item, 0)) for item in key]
+    result["review_source_count"] = ((result.get("nutrime_review_evidence_count", 0) > 0).astype(int) + (result.get("chongkundang_review_evidence_count", 0) > 0).astype(int))
+    result["consumer_review_support"] = ((result["review_source_count"] > 0).astype(int))
+    result["product_fact_support"] = (result["mfds_support"] > 0).astype(int)
+    result["seller_support"] = (result["seller_support"] > 0).astype(int)
+    grouped_examples = evidence.groupby(["category", "normalized_attribute", "normalized_value"])["text_raw"].apply(lambda values: list(dict.fromkeys(str(value) for value in values if str(value).strip()))[:2]).to_dict()
+    example_keys = list(zip(result["category"], result["facet_candidate"], result["value_candidate"]))
+    result["review_example_1"] = [grouped_examples.get(key, ["", ""])[0] if grouped_examples.get(key) else "" for key in example_keys]
+    result["review_example_2"] = [grouped_examples.get(key, ["", ""])[1] if len(grouped_examples.get(key, [])) > 1 else "" for key in example_keys]
+    result["cross_source_support_count"] = result["source_count"]
+    result["priority"] = "LOW"
+    result.loc[(result["source_count"] >= 2) | (result["review_source_count"] >= 2), "priority"] = "HIGH"
+    result.loc[(result["priority"] == "LOW") & (result["review_source_count"] > 0), "priority"] = "MEDIUM"
     return result
 
 
@@ -366,7 +436,15 @@ def run_pipeline(root: Path, output_dir: Path, enable_reviews: bool = False) -> 
     pd.concat([purchase_metrics, consumer_metrics], ignore_index=True).to_csv(output_dir / "consumer_aggregate_metrics.csv", index=False, encoding="utf-8-sig")
     statuses.append({"source": "lgu_hff", "source_type": "KOREAN_HFF_PURCHASE_AGGREGATE", "status": "AVAILABLE" if not purchase_metrics.empty else "NOT_AVAILABLE", "rows": len(purchase_metrics)})
     statuses.append({"source": "korean_consumer_aggregate", "source_type": "KOREAN_CONSUMER_AGGREGATE", "status": "AVAILABLE" if not consumer_metrics.empty else "NOT_AVAILABLE", "rows": len(consumer_metrics)})
-    statuses.append({"source": "korean_hff_review", "source_type": "KOREAN_HFF_REVIEW_DATA", "status": "NOT_AVAILABLE", "rows": 0})
+    review_paths = {
+        "nutrime": sorted((root / "data/raw/reviews/nutrime").glob("*.jsonl")),
+        "chongkundang": sorted((root / "data/raw/reviews/chongkundang").glob("*.jsonl")),
+    }
+    for source, paths in review_paths.items():
+        path = paths[-1] if paths else root / f"data/raw/reviews/{source}/missing.jsonl"
+        review_frame, review_stats = build_review_evidence(path, source)
+        evidence.append(review_frame)
+        statuses.append({"source": source, "source_type": "KOREAN_HFF_RAW_REVIEW", "status": "AVAILABLE" if review_stats["review_count"] else "BLOCKED_OR_EMPTY", "rows": len(review_frame), "review_count": review_stats["review_count"], "mapped_count": review_stats["mapped_count"], "medical_outcome_sentence_count": review_stats["medical_outcome_sentence_count"]})
 
     unified = pd.concat(evidence, ignore_index=True) if evidence else _empty()
     aggregate = aggregate_evidence(unified)
