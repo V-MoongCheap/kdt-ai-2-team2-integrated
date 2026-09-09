@@ -8,4 +8,5 @@ fi
 
 repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "$repository_root"
-uv run --no-sync pytest -q tests/deployment
+uv run --project packaging/demand-clustering --no-sync \
+  pytest -c packaging/demand-clustering/pyproject.toml -q tests/deployment

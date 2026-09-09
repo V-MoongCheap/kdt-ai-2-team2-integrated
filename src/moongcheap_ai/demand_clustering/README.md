@@ -82,10 +82,11 @@ AWS Parameter Store의 `SecureString`으로 관리하고 배포 환경에서
 이 점수기는 PASSTHROUGH 수요와 후보가 있는 배치에서만 CPU 모델을 지연 로드하고,
 해당 배치의 중복 제거된 수요 문장과 상품 profile을 묶어 임베딩한 뒤 캐시한다.
 운영 설정은 `E5_MODEL_PATH`, 선택값 `E5_MODEL_REVISION`, 기본값 32인
-`E5_BATCH_SIZE`로 주입한다. CPU용 선택 의존성은 다음과 같이 설치한다.
+`E5_BATCH_SIZE`로 주입한다. CPU용 선택 의존성은 저장소 루트에서 다음과 같이 설치한다.
+개발·검증 환경 구성은 [B파트 패키징 안내](../../../packaging/demand-clustering/README.md)를 참고한다.
 
 ```bash
-uv sync --locked --extra embeddings
+uv sync --project packaging/demand-clustering --locked --extra embeddings
 ```
 
 planner에 로드하는 profile의 `catalog_id`는 PostgreSQL 입력의
@@ -121,7 +122,7 @@ Spring의 `jdbc:postgresql://...` 형식을 사용하지 않는다. `BACKEND_BAS
 로컬에서는 환경 파일을 명시해 실행할 수 있다.
 
 ```bash
-demand-clustering-batch --env-file .env
+uv run --project packaging/demand-clustering --no-sync demand-clustering-batch --env-file .env
 ```
 
 운영 CLI의 `plannedAt`은 실제 실행 시작 시각이며 시간대가 포함된다.

@@ -20,7 +20,7 @@ tests/
 ```
 
 기능 구현은 해당 domain 패키지에 추가하고, 테스트는 같은 이름의 테스트 패키지에 둔다.
-별도 `parts` 패키지는 사용하지 않는다.
+기능 구현은 해당 domain 패키지에 직접 추가한다. 별도 `parts` 패키지는 사용하지 않는다.
 
 `demand_clustering`의 운영 코드와 공통 계약은 `evaluation`이나 `scripts`를
 import하지 않는다. 평가 코드는 운영 domain 규칙과 계약을 재사용할 수 있다.

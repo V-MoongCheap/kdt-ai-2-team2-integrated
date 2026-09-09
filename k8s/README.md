@@ -8,7 +8,7 @@ GitOps에 반영하고, 이후 계약 변경도 함께 반영한다.
 현재 범위는 수요 클러스터링 CronJob 하나다. 다른 AI 파트의 Deployment/CronJob,
 EKS Node Group, Namespace, Secret, PVC와 Secret 동기화 리소스는 생성하지 않는다.
 이미지 빌드·실측 자료는 [컨테이너 안내](../docs/DEMAND_CLUSTERING_CONTAINER.md),
-전달 항목은 [handoff template](../docs/ci-cd-application-handoff.template.yml)을 참고한다.
+전달 항목은 [B파트 인계서](../docs/ci-cd-demand-clustering-handoff.yml)를 참고한다.
 
 ## 파일 구성과 초기값
 
@@ -129,11 +129,11 @@ tolerations:
 저장소 루트에서 실행한다. `kubectl`의 Kustomize 기능과 dev 의존성이 필요하다.
 
 ```bash
-uv sync --locked --extra data --extra dev
+uv sync --project packaging/demand-clustering --locked --extra data --extra dev
 kubectl kustomize k8s/base
 kubectl kustomize k8s/overlays/dev
 tools/verify_kubernetes_manifests.sh
-uv run --no-sync pytest
+uv run --project packaging/demand-clustering --no-sync pytest -c packaging/demand-clustering/pyproject.toml
 ```
 
 검증 스크립트는 base/dev 렌더링 결과를 파싱해 Secret·노드·재시도·보안·볼륨 계약을

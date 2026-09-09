@@ -1,7 +1,9 @@
 # Allowlist the inputs for this image; never send secrets, datasets, or models.
 **
-!pyproject.toml
-!uv.lock
+!packaging/
+!packaging/demand-clustering/
+!packaging/demand-clustering/pyproject.toml
+!packaging/demand-clustering/uv.lock
 !src/
 !src/moongcheap_ai/
 !src/moongcheap_ai/**

@@ -8,15 +8,15 @@ AI는 Dockerfile·기본 CronJob 매니페스트·실행 계약·자원 측정 �
 Jenkins/ECR 이미지 배포, GitOps 갱신, ArgoCD/EKS 연결과 환경별 운영 설정은 인프라
 측에서 구성한다. [Kubernetes 안내](../k8s/README.md)에 Secret·볼륨·AI 노드 배치
 설정과 배포 전 준비 사항을 정리했다.
-전달용 필드는 [handoff template](ci-cd-application-handoff.template.yml)에 있다.
+전달용 필드는 [B파트 인계서](ci-cd-demand-clustering-handoff.yml)에 있다.
 
 ## 빌드 및 기본 검증
 
 저장소 루트에서 실행한다. 현재 검증 대상은 Linux amd64, Python 3.13.12다.
 
 ```bash
-uv sync --locked --extra data --extra dev
-uv run --no-sync pytest
+uv sync --project packaging/demand-clustering --locked --extra data --extra dev
+uv run --project packaging/demand-clustering --no-sync pytest -c packaging/demand-clustering/pyproject.toml
 docker build -f docker/Dockerfile.demand-clustering -t demand-clustering-job:local .
 docker run --rm --network none --read-only \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m \
@@ -24,7 +24,7 @@ docker run --rm --network none --read-only \
   demand-clustering-job:local --help
 ```
 
-- `pyproject.toml`과 `uv.lock`으로 의존성을 고정한다. PyTorch는 CPU 전용 index를 사용한다.
+- `packaging/demand-clustering/`의 `pyproject.toml`과 `uv.lock`으로 B파트 의존성을 고정한다. PyTorch는 CPU 전용 index를 사용한다.
 - 빌드용 uv와 캐시는 최종 이미지에 복사하지 않는다. 패키지는 non-editable로 설치한다.
 - 이미지에는 Python 의존성, 애플리케이션 패키지, 자연어 규칙·별칭 JSON만 포함한다.
   전용 `.dockerignore`의 allowlist로 `.env`, 테스트, 데이터와 모델을 빌드 입력에서 제외한다.

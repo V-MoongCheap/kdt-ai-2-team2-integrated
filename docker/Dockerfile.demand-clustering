@@ -8,12 +8,12 @@ ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /build
 
-COPY pyproject.toml uv.lock ./
+COPY packaging/demand-clustering/pyproject.toml packaging/demand-clustering/uv.lock ./packaging/demand-clustering/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --extra embeddings --no-install-project
+    uv sync --project packaging/demand-clustering --locked --no-dev --extra embeddings --no-install-project
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --extra embeddings --no-editable
+    uv sync --project packaging/demand-clustering --locked --no-dev --extra embeddings --no-editable
 
 FROM python:3.13.12-slim-trixie AS runtime
 RUN apt-get update \
