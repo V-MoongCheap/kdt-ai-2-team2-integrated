@@ -1,9 +1,0 @@
-﻿source_product_id,product_name,category_key,category_name,facet_id,facet_name,value,source_field,mapping_status,mapping_method
-20140017002183,11종 혼합유산균,health-functional-food:probiotics,유산균·프로바이오틱스,probiotic_strain,프로바이오틱스 균주,,functional_ingredients,UNMAPPED,evidence_substring
-20140017002183,11종 혼합유산균,health-functional-food:probiotics,유산균·프로바이오틱스,product_form,제품 형태,분말,product_form,MAPPED,evidence_substring
-20140017002183,11종 혼합유산균,health-functional-food:probiotics,유산균·프로바이오틱스,regulated_function,규제 기능,유산균 증식 및 유해균 억제,main_functionality,MAPPED,evidence_substring
-2024002808071,ATOMY VITAMIN C(브라질),health-functional-food:vitamin_mineral,비타민·미네랄,functional_ingredients,기능성 성분,비타민 C,functional_ingredients,MAPPED,evidence_substring
-2024002808071,ATOMY VITAMIN C(브라질),health-functional-food:vitamin_mineral,비타민·미네랄,product_form,제품 형태,,product_form,UNMAPPED,evidence_substring
-200400200023786,L-Ergo Admixture(전량수출용),health-functional-food:skin_collagen,피부·콜라겐,functional_ingredients,기능성 성분,,functional_ingredients,UNMAPPED,evidence_substring
-200400200023786,L-Ergo Admixture(전량수출용),health-functional-food:skin_collagen,피부·콜라겐,product_form,제품 형태,정,product_form,MAPPED,evidence_substring
-200400200023786,L-Ergo Admixture(전량수출용),health-functional-food:skin_collagen,피부·콜라겐,regulated_function,규제 기능,,main_functionality,UNMAPPED,evidence_substring
