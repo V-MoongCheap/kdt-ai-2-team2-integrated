@@ -327,6 +327,48 @@ SOURCES = [
 ]
 
 
+def _blocked_candidate(source: str, url: str, reason: str, hff_scope: str = "YES") -> dict[str, str]:
+    return {
+        "source": source,
+        "review_exists": "NOT_CONFIRMED",
+        "hff_scope": hff_scope,
+        "public_access": "PARTIAL",
+        "product_linkable": "PARTIAL",
+        "robots_status": "NOT_CONFIRMED",
+        "terms_status": "UNCLEAR",
+        "bot_protection": "UNKNOWN",
+        "purchase_verified_policy": "UNKNOWN",
+        "pilot_possible": "NO",
+        "decision": "BLOCKED_OTHER",
+        "reason": reason,
+        "url": url,
+    }
+
+
+SOURCES.extend([
+    _blocked_candidate("drs_best_korea", "https://www.drsbest.co.kr/", "국내 공식 유통·판매몰 여부와 공개 Review 연결을 확인하지 못함."),
+    _blocked_candidate("ilyang_health", "https://www.ilyang.co.kr/", "회사 홈페이지 후보이며 공식 건강기능식품몰과 공개 Review를 확인하지 못함."),
+    _blocked_candidate("dongkook_health", "https://www.dkpharm.co.kr/", "공식 회사 사이트와 판매 채널을 구분할 수 있어 공개 Review Source로 확정하지 않음."),
+    _blocked_candidate("daewoong_health", "https://www.daewoong.co.kr/", "공식 회사 사이트 후보이나 자사몰 Review 원문과 상품 연결을 확인하지 못함."),
+    _blocked_candidate("gc_health", "https://www.gccorp.com/", "공식 기업 사이트 후보이며 공개 건기식 Review 몰을 확인하지 못함."),
+    _blocked_candidate("ildong_health", "https://www.ildong.com/", "공식 브랜드·기업 사이트 후보이나 정상 공개 Review 경로를 검증하지 못함."),
+    _blocked_candidate("kwangdong_health", "https://www.ekwangdong.com/", "공식 기업 사이트와 별개로 공개 Review를 연결할 수 있는 자사몰을 확인하지 못함."),
+    _blocked_candidate("hanmi_health", "https://www.hanmi.co.kr/", "공식 제약사 사이트 후보이나 건기식 자사몰 Review를 확인하지 못함."),
+    _blocked_candidate("yuyu_health", "https://www.yuyu.co.kr/", "공식 회사 사이트 후보이나 공개 Review와 상품 연결을 검증하지 못함."),
+    _blocked_candidate("huons_health", "https://www.huons.com/", "공식 회사 사이트 후보이며 공개 건기식 Review 판매몰을 확인하지 못함."),
+    _blocked_candidate("d_mall_donga", "https://www.dmall.co.kr/", "공식 브랜드몰 후보이나 공개 Review 원문과 자동수집 정책을 확인하지 못함.", "PARTIAL"),
+    _blocked_candidate("daesang_wellife", "https://www.daesangwellife.com/", "공식 브랜드 후보이나 공개 Review와 Product 연결을 확인하지 못함."),
+    _blocked_candidate("vitatree", "https://www.vitatree.co.kr/", "건기식 전문몰 후보이나 공식몰 여부와 공개 Review 정책을 확인하지 못함."),
+    _blocked_candidate("new_origin", "https://www.neworigin.co.kr/", "브랜드몰 후보이나 건강기능식품 범위와 공개 Review 연결을 확인하지 못함.", "PARTIAL"),
+    _blocked_candidate("solgar_korea", "https://www.solgar.co.kr/", "국내 공식 판매몰 여부와 공개 Review 원문을 확인하지 못함."),
+    _blocked_candidate("gnc_korea", "https://www.gnc.co.kr/", "국내 공식 유통몰 여부와 공개 Review 접근 경로를 확인하지 못함."),
+    _blocked_candidate("denps", "https://www.denps.com/", "브랜드몰 후보이나 공개 Review·정책·Product 연결을 확인하지 못함."),
+    _blocked_candidate("celltrion_health", "https://www.celltrionskincure.com/", "공식 브랜드 사이트 후보이나 건기식 자사몰 Review 수집 조건을 확인하지 못함.", "PARTIAL"),
+    _blocked_candidate("jw_health", "https://www.jwpharma.co.kr/", "제약사 공식 사이트 후보이나 공개 Review와 상품 연결을 확인하지 못함.", "PARTIAL"),
+    _blocked_candidate("pharmbio_health", "https://www.pharmbio.co.kr/", "건기식 브랜드 후보이나 공식몰과 공개 Review를 검증하지 못함."),
+])
+
+
 def build_report(output: Path) -> None:
     columns = [
         "source", "review_exists", "hff_scope", "public_access", "product_linkable",
@@ -342,12 +384,14 @@ def build_report(output: Path) -> None:
         "",
         "## 요약",
         f"- 조사 후보: {len(SOURCES)}곳",
+        f"- 이번 단계 추가 조사 후보: {len(SOURCES) - 25}곳",
         f"- GREEN: {sum(row['decision'] == 'GREEN' for row in SOURCES)}곳",
         f"- BLOCKED: {sum(row['decision'].startswith('BLOCKED') for row in SOURCES)}곳",
         "- CONDITIONAL: 0곳",
         "- Raw Review: 뉴트리미 공개 Pagination에서 423건 확보. 고정 3,000/5,000건을 목표로 삼지 않으며 신규 공개분만 증분 수집한다.",
         "- Pilot Source: nutrime",
         "- Pilot Review 수: 423",
+        "- Analysis Review 수: 399 (상품별 최대 50건 샘플링; Raw와 분리)",
         "- Pilot Review Text Usable Rate: 100%",
         "- Pilot Rating Coverage: 100%",
         "- Pilot Product Mapping Rate: 82.27% (348/423)",
@@ -361,7 +405,9 @@ def build_report(output: Path) -> None:
         "|" + "---|" * len(columns),
     ]
     for row in SOURCES:
-        lines.append("| " + " | ".join(str(row[column]).replace("|", "\\|") for column in columns) + " |")
+        rendered = dict(row)
+        rendered["decision"] = {"BLOCKED_AUTOMATION_TERMS": "BLOCKED_TERMS", "BLOCKED_UNVERIFIABLE_POLICY": "BLOCKED_OTHER"}.get(row["decision"], row["decision"])
+        lines.append("| " + " | ".join(str(rendered[column]).replace("|", "\\|") for column in columns) + " |")
     lines.extend([
         "",
         "## 직접 확인 근거",
