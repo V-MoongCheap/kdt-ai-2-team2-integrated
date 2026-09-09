@@ -1,42 +1,49 @@
-# Nutrime Consumer Facet Discovery
+# Nutrime Consumer Facet Discovery 최종 QA
 
-실제 Nutrime 건강기능식품 Review에서 기존 Taxonomy로 설명되지 않는 소비자 경험 후보를 탐색한 결과다. 기존 Taxonomy와 Alias 66개는 변경하지 않았다.
+기존 Discovery 결과를 재탐색하지 않고 Human Review 전 검증만 수행한 보고서다.
+Taxonomy와 Alias 66개는 수정하지 않았다.
 
-## Scope
-- analyzed raw reviews: 423
-- primary HFF-mapped reviews: 348
-- unmapped reference reviews: 75
-- Naver Corpus: 후보 발견 후 약한 표현 참고용으로만 검색
+## Count Definition
+- TOTAL_UNIQUE_REVIEWS_ANALYZED: 423
+- EXTRACTED_ANALYSIS_ROWS: 607
+- One review can produce multiple expressions, so discovery-type analysis row totals can exceed 423.
 
 ## Discovery Type Counts
-| type | row count |
-|---|---:|
-| EXISTING_FACET | 316 |
-| NEW_VALUE | 0 |
-| NEW_ALIAS | 32 |
-| NEW_FACET_CANDIDATE | 29 |
-| NON_FACET | 161 |
-| SUBJECTIVE_MEDICAL_OUTCOME | 69 |
+| discovery_type | analysis_row_count | unique_review_count |
+|---|---:|---:|
+| EXISTING_FACET | 316 | 181 |
+| NEW_ALIAS | 32 | 29 |
+| NEW_FACET_CANDIDATE | 29 | 28 |
+| NON_FACET | 161 | 161 |
+| SUBJECTIVE_MEDICAL_OUTCOME | 69 | 69 |
 
-## New Facet Candidate Strength
-| strength | count |
-|---|---:|
-| STRONG_CANDIDATE | 1 |
-| MODERATE_CANDIDATE | 2 |
-| WEAK_CANDIDATE | 2 |
+## Intake Frequency Product Verification
+- Product corpus rows: 45921
+- Rows with daily_frequency_candidate: 41801
+- Unique products with the field: 41801
+- Product source fields: intake_method, 섭취방법, daily_frequency_candidate, amount_per_intake_candidate, dose_unit_candidate.
+- Conclusion: the related fields exist in the Product Corpus. Nutrime remains NOT_VERIFIABLE because no verified crosswalk exists between Nutrime source_product_id and the MFDS Product Corpus; this is not a missing verifier field.
+- Individual Nutrime product verification therefore remains unresolved; only Product Corpus field availability is verified.
 
-## Candidate Review
-| proposed facet | strength | reviews | products | categories | expressions | product | seller | Naver reference |
+## Candidate QA
+| proposed_facet | strength | analysis rows | unique reviews | products | categories | taxonomy relation | review action | product verifiability |
 |---|---|---:|---:|---:|---:|---|---|---|
-| digestive_tolerance | WEAK_CANDIDATE | 1 | 1 | 1 | 2 | NOT_VERIFIABLE | NO_SELLER_SUPPORT | KOREAN_GENERAL_CONSUMER_EXPRESSION_SUPPORT (9) |
-| intake_frequency | STRONG_CANDIDATE | 15 | 8 | 1 | 4 | NOT_VERIFIABLE | SUPPORTED_SELLER_DATA | KOREAN_GENERAL_CONSUMER_EXPRESSION_SUPPORT (15) |
-| mixability | WEAK_CANDIDATE | 3 | 0 | 0 | 1 | NOT_VERIFIABLE | SUPPORTED_SELLER_DATA | KOREAN_GENERAL_CONSUMER_EXPRESSION_SUPPORT (106) |
-| opening_convenience | MODERATE_CANDIDATE | 2 | 1 | 1 | 2 | NOT_VERIFIABLE | NO_SELLER_SUPPORT | KOREAN_GENERAL_CONSUMER_EXPRESSION_SUPPORT (325) |
-| storage_convenience | MODERATE_CANDIDATE | 2 | 1 | 1 | 2 | NOT_VERIFIABLE | SUPPORTED_SELLER_DATA | KOREAN_GENERAL_CONSUMER_EXPRESSION_SUPPORT (711) |
+| digestive_tolerance | WEAK_CANDIDATE | 2 | 2 | 1 | 1 | UNRESOLVED | REVIEW_AFTER_SOURCE_CHECK | NOT_VERIFIABLE |
+| intake_frequency | STRONG_CANDIDATE | 19 | 19 | 8 | 1 | VALUE_OF_EXISTING_FACET | REVIEW_FOR_VALUE | NOT_VERIFIABLE_NUTRIME_CROSSWALK_MISSING_FIELD_AVAILABLE |
+| mixability | WEAK_CANDIDATE | 3 | 3 | 0 | 0 | VALUE_OF_EXISTING_FACET | REVIEW_FOR_VALUE | NOT_VERIFIABLE |
+| opening_convenience | MODERATE_CANDIDATE | 3 | 3 | 1 | 1 | RELATED_BUT_DISTINCT | REVIEW_AS_NEW_FACET | NOT_VERIFIABLE |
+| storage_convenience | MODERATE_CANDIDATE | 2 | 1 | 1 | 1 | RELATED_BUT_DISTINCT | REVIEW_AS_NEW_FACET | NOT_VERIFIABLE |
 
-## Interpretation
-- `EXISTING_FACET`와 `NEW_VALUE`/`NEW_ALIAS`는 신규 Facet으로 승격하지 않는다.
-- 배송·가격·프로모션·판매자 응대·수량·재구매·단순 만족 표현은 Non-Facet으로 분리한다.
-- 의료 효능·질병 개선 표현은 `SUBJECTIVE_MEDICAL_OUTCOME`으로 별도 분리한다.
-- Product/Seller에 없는 소비자 체감 특성도 `REVIEW_ONLY` 후보로 보존할 수 있으나 자동 승인하지 않는다.
-- 모든 신규 후보의 reviewer_decision은 `PENDING_REVIEW`다.
+## Digestive Tolerance
+- Classification: CONSUMER_USAGE_EXPERIENCE
+- The source text describes an individual experience after intake. It does not provide sufficient basis for a disease outcome or an explicit adverse-reaction classification.
+- It remains a WEAK_CANDIDATE and is not eligible for automatic Facet approval.
+
+## Mixability Mapping Detail
+- 상세 파일: `data/review/model1_mixability_review_details.csv`
+- All three rows have an empty source_product_id. This is an unmapped input record, not evidence that Product information was lost in the pipeline.
+- HFF status is therefore not confirmed from source mapping and is marked HFF_UNCERTAIN_UNMAPPED.
+
+## Human Review Rule
+- reviewer_decision remains PENDING_REVIEW for every candidate.
+- recommended_review_action is a review hint, not an automatic approval.
