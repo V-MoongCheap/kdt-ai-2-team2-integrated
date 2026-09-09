@@ -24,12 +24,12 @@ sources:
     access_status: READY_MANUAL_DOWNLOAD
     cost: UNKNOWN
     login_required: likely
-    automated_collection_status: NOT_APPLICABLE
+    automated_collection_status: FOODPOLIS_OPEN_API_ENDPOINT_NOT_FOUND
     internal_analysis_status: WAITING_FOR_DASHBOARD_ACCESS
     redistribution_status: UNKNOWN
     retrieved_at: 2026-09-08
     raw_path: data/raw/purchase/foodpolis/
-    notes: 사용자가 대시보드 신청 완료. 승인 후 마이페이지 > 나만의 대시보드 > 서비스 접속에서 정상 UI Export를 받아 처리.
+    notes: 공식 서비스 소개에는 소매채널 판매정보가 있으나 현재 확인 가능한 공식 Open API 상세 Endpoint는 없음. 사용자가 대시보드 신청 완료했으며 승인 후 정상 UI Export를 받아 처리.
   - source_id: lgu_uplus_hff_2021_12
     source_name: 건강기능식품 융합데이터 시장지표 21년 12월
     provider: LG U+

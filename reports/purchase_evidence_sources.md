@@ -10,6 +10,7 @@
 
 ## 현재 판정
 - 검증 완료된 Product-level 또는 Category-level 구매/판매 원자료: 0개.
+- Foodpolis 공식 서비스 소개에는 소매채널 판매정보가 존재하지만 Open API 상세 Endpoint는 현재 확인되지 않았다(`FOODPOLIS_OPEN_API_AVAILABLE=false`).
 - Foodpolis는 사용자의 대시보드 신청 후 승인 대기 상태이며, 비공개 API를 추측하지 않는다.
 - LG U+는 제공처 회신 대기 상태이며, 추가 다운로드 시도를 요구하지 않는다.
 - 생산실적, 일반 시장규모, 검색·클릭 비율은 구매/판매 evidence로 승격하지 않는다.
