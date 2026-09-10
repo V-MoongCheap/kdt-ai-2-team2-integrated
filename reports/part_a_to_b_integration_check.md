@@ -18,11 +18,14 @@ Part B의 `demand_clustering.runtime_job`은 PostgreSQL에서 원본 Demand와 B
 
 산출 위치는 로컬 전용 `data/processed/mvp_e2e_v2_2/`이다.
 
+## 현재 Contract 판정
+
+`PART_A_OUTPUT_CONTRACT = READY`이며, Part A는 B의 `DemandRequirementResult`와 동일한 snake_case 구조를 생성한다. `PART_A_OUTPUT_CONSUMED_BY_B = NOT_YET`이다. 현재 B 운영 런타임은 원문을 다시 Parser에 넣는다.
+
 ## 남은 계약 차이
 
-1. 운영 B가 A의 `constraints`를 직접 소비하는 API 계약은 아직 저장소에서 확인되지 않았다.
+1. 운영 B가 A의 `DemandRequirementResult`를 직접 소비하는 transport/API 계약은 아직 저장소에서 확인되지 않았다.
 2. B 운영 런타임의 원본 DB 재파싱과 A 결과 전송 방식 중 어느 것을 최종 경로로 할지는 Backend 통합 결정이 필요하다.
 3. `label`은 단일 압축 표현이므로 `PREFER`/ANY_OF의 완전한 표현으로 사용하면 안 된다. downstream은 typed 계약을 우선해야 한다.
 
 이 차이는 B 알고리즘 변경 없이 Backend API/DTO 합의로 해결할 통합 항목이다.
-

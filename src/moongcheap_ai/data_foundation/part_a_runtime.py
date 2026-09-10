@@ -53,23 +53,6 @@ def _facet_index(loader: TaxonomyLoader, category_id: str) -> dict[str, dict[str
     }
 
 
-def _contract_constraints(loader: TaxonomyLoader, category_id: str, result: Mapping[str, Any]) -> list[dict[str, Any]]:
-    facets = _facet_index(loader, category_id)
-    constraints: list[dict[str, Any]] = []
-    for item in result.get("constraints", []):
-        facet_key = str(item.get("facet_name", ""))
-        facet = facets.get(facet_key, {})
-        constraints.append({
-            "facetKey": facet_key,
-            "canonicalValue": str(item.get("value", "")),
-            "facetCode": int(facet.get("facet_id", 0) or 0),
-            "valueCode": int(item.get("value_code", 0) or 0),
-            "constraintType": str(item.get("constraint_type", "PREFER")),
-            "evidence": str(item.get("evidence_clause", "")),
-        })
-    return constraints
-
-
 def _label(loader: TaxonomyLoader, category_id: str, constraints: list[dict[str, Any]]) -> tuple[str, dict[str, dict[str, Any]]]:
     facets = _facet_index(loader, category_id)
     values: dict[str, dict[str, Any]] = {}
@@ -79,8 +62,8 @@ def _label(loader: TaxonomyLoader, category_id: str, constraints: list[dict[str,
     for item in constraints:
         # A single label cannot represent ANY_OF or repeated values reliably.
         # Keep ALL in that case and leave the typed constraints to downstream code.
-        if item["facetKey"] in values and item["constraintType"] in {"MUST", "EXCLUDE"}:
-            values[item["facetKey"]] = {"code": item["valueCode"], "value": item["canonicalValue"]}
+        if item["facet_name"] in values and item["constraint_type"] in {"MUST", "EXCLUDE"}:
+            values[item["facet_name"]] = {"code": item["value_code"], "value": item["value"]}
     ordered = sorted(facets.items(), key=lambda pair: int(pair[1].get("order", 0)))
     return "-".join(str(values[name]["code"]) for name, _ in ordered), values
 
@@ -123,7 +106,7 @@ def run_part_a_batch(
             status = str(result["status"])
             if status not in STATUSES:
                 status = "REVIEW"
-            constraints = _contract_constraints(taxonomy, category_id, result)
+            constraints = list(result.get("constraints", []))
             label, facet_values = _label(taxonomy, category_id, constraints)
             reason_codes = list(result.get("warnings", []))
             if result.get("diagnostic_code"):
@@ -137,10 +120,15 @@ def run_part_a_batch(
                 "categoryId": category_id,
                 "taxonomyVersion": str(payload.get("version", "v2.2")),
                 "status": status,
-                "effectiveRequirementMode": str(result["effective_requirement_mode"]),
+                "effective_requirement_mode": str(result["effective_requirement_mode"]),
                 "constraints": json.dumps(constraints, ensure_ascii=False, separators=(",", ":")),
-                "preferenceGroups": json.dumps(result.get("preference_groups", []), ensure_ascii=False, separators=(",", ":")),
-                "passthroughText": requirement if status == "PASSTHROUGH" else None,
+                "warnings": json.dumps(result.get("warnings", []), ensure_ascii=False, separators=(",", ":")),
+                "clauses": json.dumps(result.get("clauses", []), ensure_ascii=False, separators=(",", ":")),
+                "interpretation_method": result.get("interpretation_method", ""),
+                "preference_groups": json.dumps(result.get("preference_groups", []), ensure_ascii=False, separators=(",", ":")),
+                "semantic_preferences": json.dumps(result.get("semantic_preferences", []), ensure_ascii=False, separators=(",", ":")),
+                "diagnostic_code": result.get("diagnostic_code"),
+                "taxonomy_equivalences": json.dumps(result.get("taxonomy_equivalences", []), ensure_ascii=False, separators=(",", ":")),
                 "reasonCodes": json.dumps(reason_codes, ensure_ascii=False, separators=(",", ":")),
                 "label": label,
                 "facet_values": json.dumps(facet_values, ensure_ascii=False, separators=(",", ":")),
@@ -151,10 +139,15 @@ def run_part_a_batch(
             row.update({
                 "taxonomyVersion": str(payload.get("version", "v2.2")),
                 "status": "REVIEW",
-                "effectiveRequirementMode": "NONE",
+                "effective_requirement_mode": "NONE",
                 "constraints": "[]",
-                "preferenceGroups": "[]",
-                "passthroughText": None,
+                "warnings": "[]",
+                "clauses": "[]",
+                "interpretation_method": "PARSER_EXCEPTION",
+                "preference_groups": "[]",
+                "semantic_preferences": "[]",
+                "diagnostic_code": "PARSER_EXCEPTION",
+                "taxonomy_equivalences": "[]",
                 "reasonCodes": json.dumps(["PARSER_EXCEPTION"], ensure_ascii=False),
                 "label": "",
                 "facet_values": "{}",

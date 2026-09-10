@@ -68,6 +68,62 @@ class DemandRequirementResult:
             "effective_requirement_mode": self.effective_requirement_mode,
         }
 
+    @classmethod
+    def from_dict(cls, payload: dict) -> "DemandRequirementResult":
+        """Deserialize the stable result shape used by Part A and Part B."""
+        constraints = tuple(
+            FacetConstraint(
+                facet_name=str(item["facet_name"]),
+                value_code=int(item["value_code"]),
+                value=str(item["value"]),
+                constraint_type=str(item["constraint_type"]),
+                evidence_clause=str(item.get("evidence_clause", item["value"])),
+            )
+            for item in payload.get("constraints", [])
+        )
+        groups = tuple(
+            PreferenceGroup(
+                group_id=str(group["group_id"]),
+                operator=str(group["operator"]),
+                aggregation=str(group["aggregation"]),
+                members=tuple(
+                    FacetConstraint(
+                        facet_name=str(item["facet_name"]),
+                        value_code=int(item["value_code"]),
+                        value=str(item["value"]),
+                        constraint_type=str(item["constraint_type"]),
+                        evidence_clause=str(item.get("evidence_clause", item["value"])),
+                    )
+                    for item in group.get("members", [])
+                ),
+            )
+            for group in payload.get("preference_groups", [])
+        )
+        equivalences = tuple(
+            TaxonomyEquivalence(
+                category_id=str(item["category_id"]),
+                facet_name=str(item["facet_name"]),
+                normalized_value=str(item["normalized_value"]),
+                canonical_value_code=int(item["canonical_value_code"]),
+                canonical_value=str(item["canonical_value"]),
+                equivalent_value_codes=tuple(int(value) for value in item.get("equivalent_value_codes", [])),
+                equivalent_values=tuple(str(value) for value in item.get("equivalent_values", [])),
+            )
+            for item in payload.get("taxonomy_equivalences", [])
+        )
+        return cls(
+            status=str(payload["status"]),
+            constraints=constraints,
+            warnings=tuple(str(value) for value in payload.get("warnings", [])),
+            clauses=tuple(str(value) for value in payload.get("clauses", [])),
+            interpretation_method=str(payload["interpretation_method"]),
+            preference_groups=groups,
+            semantic_preferences=tuple(str(value) for value in payload.get("semantic_preferences", [])),
+            diagnostic_code=payload.get("diagnostic_code"),
+            taxonomy_equivalences=equivalences,
+            effective_requirement_mode=str(payload.get("effective_requirement_mode", "NONE")),
+        )
+
 
 class ConstraintInputPolicy:
     """Normalize the optional requirement field around the frozen parser."""

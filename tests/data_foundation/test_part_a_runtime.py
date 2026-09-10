@@ -1,9 +1,10 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 
 from moongcheap_ai.data_foundation.part_a_runtime import run_part_a_batch
-from moongcheap_ai.demand_constraints.service import DemandConstraintParser
+from moongcheap_ai.demand_constraints import DemandConstraintParser, DemandRequirementResult
 
 
 def _fixtures(tmp_path):
@@ -36,12 +37,37 @@ def test_part_a_returns_backend_contract_without_clustering(tmp_path):
     result, summary = run_part_a_batch(demands, taxonomy, rules, aliases)
     assert list(result["status"]) == ["PARSED", "NOT_APPLICABLE", "PASSTHROUGH", "PARSED"]
     constraints = json.loads(result.loc[0, "constraints"])
-    assert constraints[0]["facetKey"] == "product_form"
-    assert constraints[0]["valueCode"] == 1
-    assert result.loc[2, "effectiveRequirementMode"] == "SEMANTIC_TEXT"
-    assert len(json.loads(result.loc[3, "preferenceGroups"])) == 1
+    assert constraints[0]["facet_name"] == "product_form"
+    assert constraints[0]["value_code"] == 1
+    assert result.loc[2, "effective_requirement_mode"] == "SEMANTIC_TEXT"
+    assert len(json.loads(result.loc[3, "preference_groups"])) == 1
     assert summary["externalLlmCalls"] == 0
     assert summary["clustering"] == "NOT_PERFORMED"
+
+
+def test_requirement_result_json_round_trip():
+    source = DemandRequirementResult(
+        status="PARSED",
+        constraints=(),
+        warnings=("warning",),
+        clauses=("clause",),
+        interpretation_method="fixture",
+        semantic_preferences=("free text",),
+        diagnostic_code=None,
+        effective_requirement_mode="STRUCTURED",
+    )
+    restored = DemandRequirementResult.from_dict(source.to_dict())
+    assert restored.to_dict() == source.to_dict()
+
+
+def test_part_a_to_b_fixture_has_twenty_round_trip_results():
+    fixture = json.loads(
+        Path("tests/fixtures/part_a_to_b/demand_requirement_results.json").read_text(encoding="utf-8")
+    )
+    assert len(fixture["cases"]) == 20
+    for case in fixture["cases"]:
+        restored = DemandRequirementResult.from_dict(case["requirement"])
+        assert restored.to_dict() == case["requirement"]
 
 
 def test_part_a_isolates_parser_failure_and_preserves_backend_ids(tmp_path, monkeypatch):
