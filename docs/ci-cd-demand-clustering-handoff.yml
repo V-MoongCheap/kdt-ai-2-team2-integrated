@@ -6,6 +6,7 @@ branch: develop
 
 build_command: "uv sync --project packaging/demand-clustering --locked --extra data --extra dev"
 test_command: "uv run --project packaging/demand-clustering --no-sync pytest -c packaging/demand-clustering/pyproject.toml"
+alias_test_command: "uv run --project packaging/demand-clustering --no-sync pytest -c packaging/demand-clustering/pyproject.toml tests/demand_clustering/test_alias_fallback.py tests/demand_clustering/test_part_a_integration.py tests/demand_clustering/test_runtime_job.py"
 manifest_test_command: "tools/verify_kubernetes_manifests.sh"
 ci_tools: [uv, kubectl]  # 매니페스트 검사는 kubectl kustomize를 사용하며 클러스터 접속 없음
 runtime_install_command: "uv sync --project packaging/demand-clustering --locked --no-dev --extra embeddings --no-editable"
@@ -53,9 +54,9 @@ environment_variables:
   - name: DEMAND_CONSTRAINT_RULES_PATH
     purpose: "자연어 조건 규칙 JSON"
   - name: DEMAND_CONSTRAINT_ALIASES_PATH
-    purpose: "A 승인 별칭 config/model1_aliases_reviewed_v2.json (taxonomy_version=v2.2)"
+    purpose: "선택 A 승인 별칭; 미설정/파일 없음이면 B-only, 제공된 파일의 잘못된 버전·코드/값은 차단"
   - name: DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH
-    purpose: "선택 B 기존 표현 호환 별칭; config/demand_constraint_aliases.json, A 승인과 구분"
+    purpose: "필수 B 기본 별칭; config/demand_constraint_aliases.json, A와 겹치는 표현만 A 우선"
   - name: E5_MODEL_PATH
     purpose: "로컬 CPU E5 모델 디렉터리"
   - name: E5_MODEL_REVISION

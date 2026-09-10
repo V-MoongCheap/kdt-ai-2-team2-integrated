@@ -53,13 +53,14 @@ def main() -> int:
     )
     arguments.add_argument(
         "--aliases", type=Path,
-        default=Path(os.environ.get(
+        default=os.environ.get(
             "DEMAND_CONSTRAINT_ALIASES_PATH", "config/model1_aliases_reviewed_v2.json"
-        )),
+        ) or None,
     )
+    arguments.add_argument("--without-a-aliases", dest="aliases", action="store_const", const=None)
     arguments.add_argument(
         "--compatibility-aliases", type=Path,
-        default=os.environ.get("DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH") or None,
+        default=os.environ.get("DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH", "config/demand_constraint_aliases.json"),
     )
     args = arguments.parse_args()
     if platform.system() != "Linux":

@@ -20,6 +20,7 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# B aliases are required. Clear DEMAND_CONSTRAINT_ALIASES_PATH to run B-only.
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

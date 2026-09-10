@@ -114,7 +114,7 @@ def _environment(tmp_path: Path) -> dict[str, str]:
         "DEMAND_CONSTRAINT_RULES_PATH": str(
             ROOT / "config/demand_constraint_rules.json"
         ),
-        "DEMAND_CONSTRAINT_ALIASES_PATH": str(
+        "DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH": str(
             ROOT / "config/demand_constraint_aliases.json"
         ),
         "E5_MODEL_PATH": str(paths["model"]),
@@ -298,7 +298,8 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
         catalog_profiles_path=paths["profiles"],
         taxonomy_path=paths["taxonomy"],
         constraint_rules_path=ROOT / "config/demand_constraint_rules.json",
-        constraint_aliases_path=ROOT / "config/demand_constraint_aliases.json",
+        constraint_aliases_path=None,
+        constraint_compat_aliases_path=ROOT / "config/demand_constraint_aliases.json",
         e5=E5RuntimeScorerConfig(paths["model"], batch_size=8),
         min_participants=5,
     )
@@ -378,6 +379,7 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
     assert len(connection.cursor_instance.executions) == 6
     assert "batchId" not in result.to_dict()
     assert result.e5_cache_summary["modelLoaded"] is False
+    assert result.part_a_integration["aliasMode"] == "B_ONLY"
     assert result.part_a_integration["labelDiagnostics"]["statusCounts"] == {label_status: 2}
     assert result.part_a_integration["labelDiagnostics"]["usedForCandidateSelection"] is False
     assert result.to_dict()["substitution"]["proposalCount"] == (
@@ -420,6 +422,39 @@ def test_profile_version_mismatch_stops_before_database_or_backend(tmp_path):
         pytest.fail("version mismatch must be detected before database access")
 
     with pytest.raises(ValueError, match="do not match v2.1"):
+        run_demand_clustering_job(config, planned_at=PLANNED_AT, connection_factory=must_not_connect)
+
+
+@pytest.mark.parametrize("primary_path", [None, "", "missing-a.json"])
+def test_a_path_is_optional_b_base_is_required(tmp_path, primary_path):
+    environment = _environment(tmp_path)
+    if primary_path is not None:
+        environment["DEMAND_CONSTRAINT_ALIASES_PATH"] = primary_path
+    config = load_job_config(environment)
+    assert config.constraint_aliases_path == (Path(primary_path) if primary_path else None)
+    assert config.constraint_compat_aliases_path == ROOT / "config/demand_constraint_aliases.json"
+    del environment["DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH"]
+    with pytest.raises(ConfigurationError, match="DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH"):
+        load_job_config(environment)
+
+
+@pytest.mark.parametrize("target", [{"code": 999, "value": "정"}, {"code": 1, "value": "캡슐"}])
+def test_invalid_a_target_stops_before_database_or_backend(tmp_path, target):
+    environment = _environment(tmp_path)
+    aliases_path = tmp_path / "invalid-a.json"
+    aliases_path.write_text(json.dumps({
+        "version": "a-test", "taxonomy_version": "v2.1", "aliases": [{
+            "facet_name": "product_form", "canonical_value": "tablet", "surfaces": ["정제"],
+            "category_local_values": {CATEGORY: target},
+        }],
+    }))
+    environment["DEMAND_CONSTRAINT_ALIASES_PATH"] = str(aliases_path)
+    config = load_job_config(environment)
+
+    def must_not_connect(*args):
+        pytest.fail("invalid A target reached database")
+
+    with pytest.raises(ValueError, match="primary alias code"):
         run_demand_clustering_job(config, planned_at=PLANNED_AT, connection_factory=must_not_connect)
 
 

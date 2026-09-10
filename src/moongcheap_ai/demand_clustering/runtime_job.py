@@ -83,7 +83,7 @@ class DemandClusteringJobConfig:
     catalog_profiles_path: Path
     taxonomy_path: Path
     constraint_rules_path: Path
-    constraint_aliases_path: Path
+    constraint_aliases_path: Path | None
     e5: E5RuntimeScorerConfig
     min_participants: int
     constraint_compat_aliases_path: Path | None = None
@@ -240,14 +240,13 @@ def load_job_config(
             source,
             DEMAND_CONSTRAINT_RULES_PATH_ENV,
         ),
-        constraint_aliases_path=_required_file(
-            source,
-            DEMAND_CONSTRAINT_ALIASES_PATH_ENV,
-        ),
-        constraint_compat_aliases_path=(
-            _required_file(source, DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH_ENV)
-            if source.get(DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH_ENV, "").strip()
+        constraint_aliases_path=(
+            Path(source[DEMAND_CONSTRAINT_ALIASES_PATH_ENV].strip()).expanduser()
+            if source.get(DEMAND_CONSTRAINT_ALIASES_PATH_ENV, "").strip()
             else None
+        ),
+        constraint_compat_aliases_path=_required_file(
+            source, DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH_ENV,
         ),
         e5=E5RuntimeScorerConfig(
             model_path=e5.model_path.expanduser(),
@@ -333,6 +332,8 @@ def run_demand_clustering_job(
     if planned_at.tzinfo is None or planned_at.utcoffset() is None:
         raise ValueError("planned_at must include timezone information")
 
+    if config.constraint_compat_aliases_path is None:
+        raise ConfigurationError("B base aliases are required for the runtime")
     profiles = pd.read_csv(config.catalog_profiles_path, dtype=str).fillna("")
     taxonomy = _load_taxonomy(config.taxonomy_path)
     validate_profile_versions(profiles, taxonomy)
