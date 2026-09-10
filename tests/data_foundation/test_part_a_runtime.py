@@ -145,6 +145,32 @@ def test_part_a_prevalidates_category_before_parser_and_keeps_invalid_rows_pendi
     assert summary["categoryPrevalidationFailureCount"] == 2
 
 
+def test_part_a_rejects_invalid_substitution_consent_before_parser(tmp_path, monkeypatch):
+    taxonomy, rules, aliases = _fixtures(tmp_path)
+
+    class ParserMustNotBeCalled:
+        def interpret(self, *args, **kwargs):
+            raise AssertionError("parser must not be called for invalid input")
+
+    monkeypatch.setattr(
+        "moongcheap_ai.data_foundation.part_a_runtime.DemandConstraintParser.from_taxonomy",
+        classmethod(lambda cls, *args, **kwargs: ParserMustNotBeCalled()),
+    )
+    demands = pd.DataFrame([{
+        "demand_id": "invalid-bool",
+        "catalog_id": "p1",
+        "category_id": "c1",
+        "extra_requirement": "캡슐",
+        "is_substitutable": "maybe",
+    }])
+
+    result, _ = run_part_a_batch(demands, taxonomy, rules, aliases)
+
+    assert result.loc[0, "status"] == "REVIEW"
+    assert result.loc[0, "diagnostic_code"] == "INVALID_IS_SUBSTITUTABLE"
+    assert result.loc[0, "processed_at"] == ""
+
+
 def test_v22_category_local_alias_maps_powder_to_korean_value():
     taxonomy = json.loads(__import__("pathlib").Path("config/facet_taxonomy_v2_2.json").read_text(encoding="utf-8"))
     parser = DemandConstraintParser.from_taxonomy(

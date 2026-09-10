@@ -29,8 +29,17 @@ STATUSES = {
 }
 
 
-def _bool(value: object) -> bool:
-    return str(value or "").strip().casefold() in {"1", "true", "yes", "y", "동의"}
+def _substitution_consent(value: object) -> bool | None:
+    """Return consent, or None when the input is outside the contract."""
+
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().casefold()
+    if normalized in {"1", "1.0", "true", "yes", "y", "동의"}:
+        return True
+    if normalized in {"0", "0.0", "false", "no", "n", ""}:
+        return False
+    return None
 
 
 def _category_map(frame: pd.DataFrame) -> dict[str, str]:
@@ -134,11 +143,42 @@ def run_part_a_batch(
                 })
                 rows.append(row)
                 continue
+            has_substitution_consent = "is_substitutable" in source.columns
+            is_substitutable = (
+                _substitution_consent(raw.get("is_substitutable"))
+                if has_substitution_consent
+                else True
+            )
+            if is_substitutable is None:
+                row.update({
+                    "category_id": category_id,
+                    "demandId": raw.get("demand_id", ""),
+                    "catalogId": raw.get("catalog_id", ""),
+                    "categoryId": category_id,
+                    "taxonomyVersion": str(payload.get("version", "v2.2")),
+                    "status": "REVIEW",
+                    "effective_requirement_mode": "NONE",
+                    "constraints": "[]",
+                    "warnings": "[]",
+                    "clauses": "[]",
+                    "interpretation_method": "INPUT_PREVALIDATION",
+                    "preference_groups": "[]",
+                    "semantic_preferences": "[]",
+                    "diagnostic_code": "INVALID_IS_SUBSTITUTABLE",
+                    "taxonomy_equivalences": "[]",
+                    "reasonCodes": json.dumps(["INVALID_IS_SUBSTITUTABLE"], ensure_ascii=False),
+                    "label": "",
+                    "facet_values": "{}",
+                    "parserVersion": RUNTIME_VERSION,
+                    "processed_at": "",
+                })
+                rows.append(row)
+                continue
             requirement = str(raw.get("extra_requirement", "") or "").strip()
             result = parser.interpret(
                 category_id,
                 requirement,
-                is_substitutable=_bool(raw.get("is_substitutable", True)),
+                is_substitutable=is_substitutable,
             ).to_dict()
             status = str(result["status"])
             if status not in STATUSES:
