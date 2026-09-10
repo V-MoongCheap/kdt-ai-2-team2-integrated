@@ -59,8 +59,8 @@ taxonomy·profile·A 별칭의 선언 버전을 검사한다. 기존 V2.1 profil
 A에서 삭제된 표현도 B에 남아 있으면 사용한다. A 파일이 존재하지만 JSON·버전·코드/값이
 잘못됐거나 읽을 권한이 없으면 중단한다. B 경로를 비우거나 B 파일이 없으면 설정 오류다.
 `partAIntegration.aliasMode`와 `primaryAliasLoadStatus`로 A 사용·미사용 이유를 구분한다.
-배치 출력의 `partAIntegration`에서 적용 버전·파일 해시와 DB `label` 진단 집계를 확인한다.
-라벨 진단은 최초 조회한 수요를 대상으로 하며, 라벨이나 `processed_at`을 DB에 쓰지 않는다.
+배치 출력의 `partAIntegration`에서 적용 버전·파일 해시를 확인한다.
+profile 생성과 별칭 변경 검증은 [V2.2 연계 안내](PART_B_V22_INTEGRATION.md)를 따른다.
 
 모델은 런타임에 다운로드하지 않는다. `HF_HUB_OFFLINE=1`이 기본이며 모델 가중치,
 tokenizer, SentenceTransformer 설정 파일이 모두 필요하다. Hugging Face cache를

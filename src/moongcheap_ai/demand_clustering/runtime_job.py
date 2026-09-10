@@ -18,7 +18,6 @@ from urllib.parse import urlparse
 import pandas as pd
 from dotenv import load_dotenv
 
-from .label_diagnostics import summarize_demand_labels
 from .part_a_integration import build_part_b_parser, file_digest, validate_profile_versions
 from .backend_board_plan import post_board_assignment_plan
 from .backend_plan_client import post_substitute_board_admission_plan
@@ -352,18 +351,6 @@ def run_demand_clustering_job(
         parser,
         text_similarity_scorer=scorer,
     )
-    category_by_catalog = {
-        int(row.catalog_id): str(row.service_category_id)
-        for row in profiles.itertuples(index=False)
-    }
-
-    def validate_inputs(inputs):
-        planner.validate_input_profile_coverage(inputs)
-        if "labelDiagnostics" not in integration:
-            integration["labelDiagnostics"] = summarize_demand_labels(
-                inputs.demands, category_by_catalog, taxonomy,
-            )
-
     connection = connection_factory(
         config.database_url,
         config.postgres_connect_timeout_seconds,
@@ -390,7 +377,7 @@ def run_demand_clustering_job(
                     config.backend_http_timeout_seconds
                 )
             ),
-            input_validator=validate_inputs,
+            input_validator=planner.validate_input_profile_coverage,
             event_handler=event_handler,
         )
     finally:

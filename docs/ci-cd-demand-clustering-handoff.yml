@@ -6,7 +6,6 @@ branch: develop
 
 build_command: "uv sync --project packaging/demand-clustering --locked --extra data --extra dev"
 test_command: "uv run --project packaging/demand-clustering --no-sync pytest -c packaging/demand-clustering/pyproject.toml"
-alias_test_command: "uv run --project packaging/demand-clustering --no-sync pytest -c packaging/demand-clustering/pyproject.toml tests/demand_clustering/test_alias_fallback.py tests/demand_clustering/test_part_a_integration.py tests/demand_clustering/test_runtime_job.py"
 manifest_test_command: "tools/verify_kubernetes_manifests.sh"
 ci_tools: [uv, kubectl]  # 매니페스트 검사는 kubectl kustomize를 사용하며 클러스터 접속 없음
 runtime_install_command: "uv sync --project packaging/demand-clustering --locked --no-dev --extra embeddings --no-editable"

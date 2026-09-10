@@ -39,7 +39,7 @@ def validate_profile_versions(
     if actual - {expected}:
         raise ValueError(
             f"profile taxonomy versions {sorted(actual)} do not match {expected}; "
-            "prepare a compatible profile release before starting the batch"
+            "rebuild profiles with the supplied taxonomy before starting the batch"
         )
     return expected
 

@@ -44,16 +44,45 @@ def interpreted(parser, text, category=CATEGORY):
 
 @pytest.fixture(scope="module")
 def parsers():
-    return {"with_a": build()[0], "b_only": build(None)[0]}
+    original = deepcopy(TAXONOMY)
+    result = {"with_a": build()[0], "b_only": build(None)[0]}
+    assert TAXONOMY == original
+    return result
 
 
 @pytest.mark.parametrize("variant", ["with_a", "b_only"])
 @pytest.mark.parametrize("text,expected", [
     ("하루 한 번 먹는 제품이면 좋겠어요.", ("daily_frequency", 1, "PREFER")),
+    ("하루 두 번 먹는 제품이면 좋겠어요.", ("daily_frequency", 2, "PREFER")),
     ("프로바이오틱스와 아연이면 좋겠어요.", ("functional_ingredients", 4, "PREFER")),
 ])
 def test_b_only_expressions_remain_available_even_when_a_is_loaded(parsers, variant, text, expected):
     assert interpreted(parsers[variant], text) == ("PARSED", {expected})
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("가루면 좋겠어요.", {("product_form", 1, "PREFER")}),
+    ("알약 제품이면 좋겠어요.", {("product_form", 2, "PREFER")}),
+    ("분말이면서 하루 한 번 먹는 제품이면 좋겠어요.", {
+        ("product_form", 1, "PREFER"), ("daily_frequency", 1, "PREFER"),
+    }),
+])
+def test_a_aliases_and_b_composite_conditions(parsers, text, expected):
+    assert interpreted(parsers["with_a"], text) == ("PARSED", expected)
+
+
+@pytest.mark.parametrize("variant", ["with_a", "b_only"])
+def test_constraint_types_and_alternative_groups_survive(parsers, variant):
+    parser = parsers[variant]
+    assert interpreted(parser, "분말은 제외해주세요.") == (
+        "PARSED", {("product_form", 1, "EXCLUDE")},
+    )
+    assert interpreted(parser, "반드시 분말 제품으로 부탁해요.") == (
+        "PARSED", {("product_form", 1, "MUST")},
+    )
+    result = parser.interpret(CATEGORY, "분말 또는 캡슐도 괜찮아요.", is_substitutable=True)
+    assert len(result.preference_groups) == 1
+    assert result.preference_groups[0].operator == "ANY_OF"
 
 
 @pytest.mark.parametrize("missing", ["not_configured", "file_missing"])
