@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from moongcheap_ai.data_foundation.part_a_runtime import run_part_a_batch
+from moongcheap_ai.demand_constraints.service import DemandConstraintParser
 
 
 def _fixtures(tmp_path):
@@ -87,3 +88,21 @@ def test_part_a_isolates_parser_failure_and_preserves_backend_ids(tmp_path, monk
     assert result.loc[4, "processed_at"] == ""
     assert summary["parserExceptionCount"] == 1
     assert summary["externalLlmCalls"] == 0
+
+
+def test_v22_category_local_alias_maps_powder_to_korean_value():
+    taxonomy = json.loads(__import__("pathlib").Path("config/facet_taxonomy_v2_2.json").read_text(encoding="utf-8"))
+    parser = DemandConstraintParser.from_taxonomy(
+        taxonomy,
+        rules_path="config/demand_constraint_rules.json",
+        aliases_path="config/model1_aliases_reviewed_v2.json",
+    )
+    result = parser.interpret(
+        "health-functional-food:probiotics",
+        "가루",
+        is_substitutable=True,
+    )
+    assert result.status == "PARSED"
+    assert result.constraints[0].facet_name == "product_form"
+    assert result.constraints[0].value == "분말"
+    assert result.constraints[0].value_code == 1
