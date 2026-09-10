@@ -44,7 +44,7 @@ Cluster 단위 집계와 판매자의 공급 조건을 받아 구조화 지표�
 ```bash
 pip install -r requirements-api.txt
 SELLER_ANALYSIS_INTERNAL_KEY=... \
-  python -m uvicorn moongcheap_ai.seller_analysis.api:create_app --factory --port 8081
+  python -m uvicorn moongcheap_ai.seller_analysis.api:create_app --factory --app-dir src --port 8081
 ```
 
 ⛔ `SELLER_ANALYSIS_INTERNAL_KEY` 없이는 **기동하지 않는다.** 인증이 빠진 채 배포되면

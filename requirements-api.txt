@@ -6,7 +6,7 @@
 #
 #   pip install -r requirements-api.txt
 #   SELLER_ANALYSIS_INTERNAL_KEY=... \
-#     python -m uvicorn moongcheap_ai.seller_analysis.api:create_app --factory --port 8081
+#     python -m uvicorn moongcheap_ai.seller_analysis.api:create_app --factory --app-dir src --port 8081
 fastapi==0.115.6
 uvicorn==0.34.0
 httpx==0.28.1          # TestClient 가 요구한다
