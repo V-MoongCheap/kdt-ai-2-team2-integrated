@@ -101,3 +101,8 @@ PYTHONPATH=src python scripts/evaluation/compare_b_v22_interpretations.py \
 - 실제 Backend 전송·운영 DB 조회·E5 추론·클러스터 배포는 이번 검증에 포함하지 않았다.
 
 원본 대량 profile과 실행 결과는 `data/processed/` 또는 `data/reports/`에 보관하며 Git에 포함하지 않는다.
+
+추가로 v0.46 당시 검수셋 129건과 합성 수요 원본 5,000건을 같은 환경에서 다시 평가했다.
+이번 호환 설정은 검수셋 127/129, 자동 PARSED 79/79를 유지했고, 5,000건 모두 당시
+저장 결과와 비교 대상 의미가 같았다. 데이터의 한계와 재현 명령은
+[자연어 해석 재평가](PART_B_V22_PARSER_REGRESSION.md)에 기록했다.
