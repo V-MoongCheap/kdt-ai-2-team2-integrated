@@ -12,6 +12,11 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+# 저장소 관례. `pyproject.toml` 의 pythonpath 는 pytest 설정이라 일반 실행에는 적용되지
+# 않는다. `scripts/evaluation/report_demand_labeling_metrics.py` 와 같은 방식이다.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from moongcheap_ai.seller_analysis.evaluation.runner import main
 

@@ -376,18 +376,21 @@ def main() -> int:
     path = out_dir / "report.json"
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    # ⛔ 판정 기호를 ASCII 로 둔다. Windows 기본 콘솔은 cp949 라 `✅` 에서
+    #    UnicodeEncodeError 로 죽는다. 실행 결과가 CI 로그나 파일로 흘러갈 수도 있어
+    #    표시 문자에 기대지 않는다. 한글 본문은 cp949 에 있으므로 그대로 둔다.
     print(f"{DATASET_VERSION} · {report['case_count']}건 · 정책 {report['calculation_policy_version']}")
     print(f"{'지표':<38}{'값':>9}{'목표':>9}   판정")
     print("-" * 72)
     for name, entry in report["metrics"].items():
-        value = "—" if entry["value"] is None else f"{entry['value'] * 100:.1f}%"
-        target = "—" if entry["target"] is None else f"{entry['target'] * 100:.0f}%"
-        mark = "✅" if entry["target_met"] else ("⛔" if entry["target_met"] is False else "·")
+        value = "-" if entry["value"] is None else f"{entry['value'] * 100:.1f}%"
+        target = "-" if entry["target"] is None else f"{entry['target'] * 100:.0f}%"
+        mark = "OK  " if entry["target_met"] else ("FAIL" if entry["target_met"] is False else "-   ")
         note = f"  ({entry['count']}/{entry['denominator']})"
         print(f"{name:<38}{value:>9}{target:>9}   {mark}{note}")
     print()
     if report["failures"]:
-        print(f"⛔ 실패 {len(report['failures'])}건")
+        print(f"FAIL 실패 {len(report['failures'])}건")
         for item in report["failures"][:10]:
             print(f"   {item['eval_id']} · {item['metric']} · {item['detail']}")
     else:
