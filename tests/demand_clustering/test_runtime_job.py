@@ -279,10 +279,16 @@ def test_opens_autocommit_read_only_postgres(monkeypatch) -> None:
     ("rejected_board_ids", "expected_board_id"),
     [((), 32), ((32,), 31), ((31, 32), None)],
 )
+@pytest.mark.parametrize("a_label,label_status", [
+    (None, "MISSING"), ("0-0-0", "VALID_CATEGORY_LOCAL"),
+    ("999-0-0", "UNKNOWN_VALUE_CODE"), ("bad-label", "INVALID_FORMAT"),
+])
 def test_runs_complete_batch_with_fake_postgres_and_backend(
     tmp_path: Path,
     rejected_board_ids: tuple[int, ...],
     expected_board_id: int | None,
+    a_label: str | None,
+    label_status: str,
 ) -> None:
     paths = _artifact_paths(tmp_path)
     config = DemandClusteringJobConfig(
@@ -299,10 +305,10 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
     board_101 = _board_row(31, 101, participant_count=5)
     board_202 = _board_row(32, 202, participant_count=10)
     connection = FakeConnection([
-        [_demand_row(1, 101), _demand_row(7, 303)],
+        [{**_demand_row(1, 101), "label": a_label}, {**_demand_row(7, 303), "label": a_label}],
         [board_101, board_202],
         [],
-        [_demand_row(7, 303)],
+        [{**_demand_row(7, 303), "label": a_label}],
         [board_101, board_202],
         [
             {"demand_id": 7, "demand_board_id": board_id}
@@ -372,6 +378,8 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
     assert len(connection.cursor_instance.executions) == 6
     assert "batchId" not in result.to_dict()
     assert result.e5_cache_summary["modelLoaded"] is False
+    assert result.part_a_integration["labelDiagnostics"]["statusCounts"] == {label_status: 2}
+    assert result.part_a_integration["labelDiagnostics"]["usedForCandidateSelection"] is False
     assert result.to_dict()["substitution"]["proposalCount"] == (
         0 if expected_board_id is None else 1
     )
@@ -399,6 +407,20 @@ def test_runs_complete_batch_with_fake_postgres_and_backend(
     assert len(next_connection.cursor_instance.executions) == 4
     assert next_result.execution.initial_demand_count == 0
     assert next_result.execution.substitute_request["proposals"] == []
+
+
+def test_profile_version_mismatch_stops_before_database_or_backend(tmp_path):
+    environment = _environment(tmp_path)
+    profiles = pd.read_csv(environment["MFDS_CATALOG_PROFILES_PATH"], dtype=str)
+    profiles["taxonomy_version"] = "v2.2"
+    profiles.to_csv(environment["MFDS_CATALOG_PROFILES_PATH"], index=False)
+    config = load_job_config(environment)
+
+    def must_not_connect(*args):
+        pytest.fail("version mismatch must be detected before database access")
+
+    with pytest.raises(ValueError, match="do not match v2.1"):
+        run_demand_clustering_job(config, planned_at=PLANNED_AT, connection_factory=must_not_connect)
 
 
 @pytest.mark.parametrize("option", ["--batch-id", "--planned-at"])

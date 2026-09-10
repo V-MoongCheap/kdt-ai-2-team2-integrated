@@ -8,7 +8,7 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -18,7 +18,8 @@ from urllib.parse import urlparse
 import pandas as pd
 from dotenv import load_dotenv
 
-from ..demand_constraints import DemandConstraintParser
+from .label_diagnostics import summarize_demand_labels
+from .part_a_integration import build_part_b_parser, file_digest, validate_profile_versions
 from .backend_board_plan import post_board_assignment_plan
 from .backend_plan_client import post_substitute_board_admission_plan
 from .batch_execution import (
@@ -49,6 +50,7 @@ MFDS_CATALOG_PROFILES_PATH_ENV = "MFDS_CATALOG_PROFILES_PATH"
 DEMAND_TAXONOMY_PATH_ENV = "DEMAND_TAXONOMY_PATH"
 DEMAND_CONSTRAINT_RULES_PATH_ENV = "DEMAND_CONSTRAINT_RULES_PATH"
 DEMAND_CONSTRAINT_ALIASES_PATH_ENV = "DEMAND_CONSTRAINT_ALIASES_PATH"
+DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH_ENV = "DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH"
 BACKEND_HTTP_TIMEOUT_SECONDS_ENV = "BACKEND_HTTP_TIMEOUT_SECONDS"
 POSTGRES_CONNECT_TIMEOUT_SECONDS_ENV = "POSTGRES_CONNECT_TIMEOUT_SECONDS"
 
@@ -84,6 +86,7 @@ class DemandClusteringJobConfig:
     constraint_aliases_path: Path
     e5: E5RuntimeScorerConfig
     min_participants: int
+    constraint_compat_aliases_path: Path | None = None
     backend_http_timeout_seconds: int = DEFAULT_BACKEND_HTTP_TIMEOUT_SECONDS
     postgres_connect_timeout_seconds: int = (
         DEFAULT_POSTGRES_CONNECT_TIMEOUT_SECONDS
@@ -95,6 +98,7 @@ class DemandClusteringJobResult:
     planned_at: datetime
     execution: DemandClusteringBatchExecutionResult
     e5_cache_summary: Mapping[str, int | bool]
+    part_a_integration: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         formation_status_counts = Counter(
@@ -138,6 +142,7 @@ class DemandClusteringJobResult:
                 ),
             },
             "e5": dict(self.e5_cache_summary),
+            "partAIntegration": dict(self.part_a_integration),
         }
 
 
@@ -239,6 +244,11 @@ def load_job_config(
             source,
             DEMAND_CONSTRAINT_ALIASES_PATH_ENV,
         ),
+        constraint_compat_aliases_path=(
+            _required_file(source, DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH_ENV)
+            if source.get(DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH_ENV, "").strip()
+            else None
+        ),
         e5=E5RuntimeScorerConfig(
             model_path=e5.model_path.expanduser(),
             model_revision=e5.model_revision,
@@ -325,11 +335,15 @@ def run_demand_clustering_job(
 
     profiles = pd.read_csv(config.catalog_profiles_path, dtype=str).fillna("")
     taxonomy = _load_taxonomy(config.taxonomy_path)
-    parser = DemandConstraintParser.from_taxonomy(
+    validate_profile_versions(profiles, taxonomy)
+    parser, integration = build_part_b_parser(
         taxonomy,
         rules_path=config.constraint_rules_path,
         aliases_path=config.constraint_aliases_path,
+        compatibility_aliases_path=config.constraint_compat_aliases_path,
     )
+    integration["taxonomySha256"] = file_digest(config.taxonomy_path)
+    integration["profileCount"] = len(profiles)
     scorer = E5RuntimeTextSimilarityScorer(config.e5)
     planner = ClaimIndexedSubstituteProposalPlanner(
         profiles,
@@ -337,6 +351,17 @@ def run_demand_clustering_job(
         parser,
         text_similarity_scorer=scorer,
     )
+    category_by_catalog = {
+        int(row.catalog_id): str(row.service_category_id)
+        for row in profiles.itertuples(index=False)
+    }
+
+    def validate_inputs(inputs):
+        planner.validate_input_profile_coverage(inputs)
+        if "labelDiagnostics" not in integration:
+            integration["labelDiagnostics"] = summarize_demand_labels(
+                inputs.demands, category_by_catalog, taxonomy,
+            )
 
     connection = connection_factory(
         config.database_url,
@@ -364,7 +389,7 @@ def run_demand_clustering_job(
                     config.backend_http_timeout_seconds
                 )
             ),
-            input_validator=planner.validate_input_profile_coverage,
+            input_validator=validate_inputs,
             event_handler=event_handler,
         )
     finally:
@@ -374,6 +399,7 @@ def run_demand_clustering_job(
         planned_at=planned_at,
         execution=execution,
         e5_cache_summary=scorer.cache_summary,
+        part_a_integration=integration,
     )
 
 

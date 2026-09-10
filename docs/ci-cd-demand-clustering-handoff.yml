@@ -53,7 +53,9 @@ environment_variables:
   - name: DEMAND_CONSTRAINT_RULES_PATH
     purpose: "자연어 조건 규칙 JSON"
   - name: DEMAND_CONSTRAINT_ALIASES_PATH
-    purpose: "자연어 조건 별칭 JSON"
+    purpose: "A 승인 별칭 config/model1_aliases_reviewed_v2.json (taxonomy_version=v2.2)"
+  - name: DEMAND_CONSTRAINT_COMPAT_ALIASES_PATH
+    purpose: "선택 B 기존 표현 호환 별칭; config/demand_constraint_aliases.json, A 승인과 구분"
   - name: E5_MODEL_PATH
     purpose: "로컬 CPU E5 모델 디렉터리"
   - name: E5_MODEL_REVISION
