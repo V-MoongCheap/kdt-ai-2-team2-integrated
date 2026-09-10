@@ -105,7 +105,17 @@ def _resolve_internal_key(internal_key):
 
 
 def create_app(internal_key=None):
-    """FastAPI 앱을 만든다. FastAPI 가 없으면 여기서만 실패한다."""
+    """FastAPI 앱을 만든다. FastAPI 가 없으면 앱 생성 단계에서만 실패한다.
+
+    ⛔ **키 검증이 FastAPI import 보다 먼저다.** 순서가 뒤집히면 FastAPI 가 없는
+    환경에서 `create_app()` 이 `RuntimeError` 대신 `ModuleNotFoundError` 를 낸다.
+    설정이 틀린 것과 의존성이 없는 것은 다른 고장이고, 받는 쪽이 구분할 수 있어야
+    한다. 저장소 기본 의존성(`requirements.txt`)에 FastAPI 가 없으므로 이것은
+    가정이 아니라 **기본 환경의 실제 동작**이다.
+    """
+    # 설정부터 본다. 의존성이 있든 없든 같은 오류를 낸다.
+    expected_key = _resolve_internal_key(internal_key)
+
     from fastapi import Depends, FastAPI, Request
     from fastapi.responses import JSONResponse
     from fastapi.security import APIKeyHeader
@@ -115,8 +125,6 @@ def create_app(internal_key=None):
     # 이것이 없으면 Backend 가 문서만 보고는 헤더가 필요한 줄 알 수 없다
     # (「AI API Contract」 4.4절 「내부 인증」 · 게시 명세 4.4절).
     internal_key_scheme = APIKeyHeader(name=INTERNAL_KEY_HEADER, auto_error=False)
-
-    expected_key = _resolve_internal_key(internal_key)
 
     request_schema = _load_schema("seller_bid_guide_request_v01.schema.json")
     response_schema = _load_schema("seller_bid_guide_response_v01.schema.json")

@@ -13,6 +13,7 @@ from unittest import mock
 
 from moongcheap_ai.seller_analysis.api import (
     ALLOW_UNAUTHENTICATED_ENV,
+    _resolve_internal_key,
     BID_GUIDE_PATH,
     INTERNAL_KEY_ENV,
     INTERNAL_KEY_HEADER,
@@ -262,6 +263,34 @@ class InternalKeyConfigurationTest(unittest.TestCase):
         self.assertEqual(client.post(BID_GUIDE_PATH, json=valid_payload()).status_code, 200)
 
 
+class KeyCheckOrderTest(unittest.TestCase):
+    """⛔ 키 검증은 FastAPI import 보다 **먼저** 와야 한다.
+
+    저장소 기본 의존성(`requirements.txt`)에 FastAPI 가 없다. 순서가 뒤집히면
+    기본 환경에서 `create_app()` 이 `RuntimeError` 가 아니라 `ModuleNotFoundError`
+    를 내고, 아래 `EmptyInternalKeyTest` 두 건이 그대로 깨진다.
+
+    이 검사는 **FastAPI 설치 여부와 무관하게** 돌아야 하므로 소스 순서를 본다.
+    실제로 FastAPI 를 지우고 돌려 재현했던 결함이다(2026-09-10 리뷰 지적).
+    """
+
+    def test_key_is_resolved_before_fastapi_is_imported(self):
+        from pathlib import Path
+
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "src" / "moongcheap_ai" / "seller_analysis" / "api.py"
+        ).read_text(encoding="utf-8")
+        body = source.split("def create_app", 1)[1]
+        resolve_at = body.index("_resolve_internal_key(internal_key)")
+        import_at = body.index("from fastapi import")
+        self.assertLess(
+            resolve_at,
+            import_at,
+            "키 검증이 FastAPI import 뒤에 있다. 기본 환경에서 오류 종류가 바뀐다",
+        )
+
+
 class EmptyInternalKeyTest(unittest.TestCase):
     """B1 — 빈 키는 「인증 켜짐」이라 보고하면서 아무나 통과시켰다.
 
@@ -278,10 +307,34 @@ class EmptyInternalKeyTest(unittest.TestCase):
                 self.assertIn("비어 있다", str(caught.exception))
 
     def test_unauthenticated_start_stays_explicit(self):
-        """무인증으로 띄우는 길은 막지 않는다. **명시**를 요구할 뿐이다."""
-        with mock.patch.dict(os.environ, {ALLOW_UNAUTHENTICATED_ENV: "1"}, clear=False):
-            with mock.patch.dict(os.environ, {INTERNAL_KEY_ENV: ""}, clear=False):
-                app = create_app()
+        """무인증으로 띄우는 길은 막지 않는다. **명시**를 요구할 뿐이다.
+
+        ⛔ 여기서 `create_app()` 을 부르지 않는다. 그러면 FastAPI 가 필요해져서
+        저장소 기본 환경에서 이 검사가 의존성 문제로 깨진다. 확인하려는 것은
+        **키 해석 규칙**이므로 그 함수를 직접 본다. 앱이 실제로 뜨는지는 아래
+        `UnauthenticatedAppTest` 가 FastAPI 가 있을 때만 본다.
+        """
+        env = {ALLOW_UNAUTHENTICATED_ENV: "1", INTERNAL_KEY_ENV: ""}
+        with mock.patch.dict(os.environ, env, clear=False):
+            self.assertIsNone(_resolve_internal_key(None))
+
+    def test_missing_key_without_the_explicit_flag_is_refused(self):
+        """명시가 없으면 거절한다. 조용히 무인증으로 열리지 않는다."""
+        env = {INTERNAL_KEY_ENV: ""}
+        with mock.patch.dict(os.environ, env, clear=False):
+            os.environ.pop(ALLOW_UNAUTHENTICATED_ENV, None)
+            with self.assertRaises(RuntimeError):
+                _resolve_internal_key(None)
+
+
+@unittest.skipUnless(FASTAPI_AVAILABLE, "fastapi 미설치")
+class UnauthenticatedAppTest(unittest.TestCase):
+    """무인증 선언이 실제로 앱을 띄우는지. 앱 생성이라 FastAPI 가 필요하다."""
+
+    def test_app_starts_when_unauthenticated_is_declared(self):
+        env = {ALLOW_UNAUTHENTICATED_ENV: "1", INTERNAL_KEY_ENV: ""}
+        with mock.patch.dict(os.environ, env, clear=False):
+            app = create_app()
         self.assertIsNotNone(app)
 
 
