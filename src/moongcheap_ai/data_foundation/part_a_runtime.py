@@ -109,40 +109,59 @@ def run_part_a_batch(
     rows: list[dict[str, Any]] = []
     now = processed_at or datetime.now(timezone.utc).isoformat()
     for raw in source.to_dict(orient="records"):
-        category_id = str(raw.get("category_id") or raw.get("kan_code") or "")
-        if not category_id and catalog_map:
-            category_id = catalog_map.get(str(raw.get("catalog_id", "")), "")
-        requirement = str(raw.get("extra_requirement", "") or "").strip()
-        result = parser.interpret(
-            category_id,
-            requirement,
-            is_substitutable=_bool(raw.get("is_substitutable", True)),
-        ).to_dict()
-        status = str(result["status"])
-        if status not in STATUSES:
-            status = "REVIEW"
-        constraints = _contract_constraints(taxonomy, category_id, result)
-        label, facet_values = _label(taxonomy, category_id, constraints)
-        reason_codes = list(result.get("warnings", []))
-        if result.get("diagnostic_code"):
-            reason_codes.insert(0, str(result["diagnostic_code"]))
-        if result.get("interpretation_method"):
-            reason_codes.append(str(result["interpretation_method"]))
         row = dict(raw)
-        row.update({
-            "category_id": category_id,
-            "taxonomyVersion": str(payload.get("version", "v2.2")),
-            "status": status,
-            "effectiveRequirementMode": str(result["effective_requirement_mode"]),
-            "constraints": json.dumps(constraints, ensure_ascii=False, separators=(",", ":")),
-            "preferenceGroups": json.dumps(result.get("preference_groups", []), ensure_ascii=False, separators=(",", ":")),
-            "passthroughText": (result.get("semantic_preferences") or [None])[0],
-            "reasonCodes": json.dumps(reason_codes, ensure_ascii=False, separators=(",", ":")),
-            "label": label,
-            "facet_values": json.dumps(facet_values, ensure_ascii=False, separators=(",", ":")),
-            "parserVersion": RUNTIME_VERSION,
-            "processed_at": now,
-        })
+        try:
+            category_id = str(raw.get("category_id") or raw.get("kan_code") or "")
+            if not category_id and catalog_map:
+                category_id = catalog_map.get(str(raw.get("catalog_id", "")), "")
+            requirement = str(raw.get("extra_requirement", "") or "").strip()
+            result = parser.interpret(
+                category_id,
+                requirement,
+                is_substitutable=_bool(raw.get("is_substitutable", True)),
+            ).to_dict()
+            status = str(result["status"])
+            if status not in STATUSES:
+                status = "REVIEW"
+            constraints = _contract_constraints(taxonomy, category_id, result)
+            label, facet_values = _label(taxonomy, category_id, constraints)
+            reason_codes = list(result.get("warnings", []))
+            if result.get("diagnostic_code"):
+                reason_codes.insert(0, str(result["diagnostic_code"]))
+            if result.get("interpretation_method"):
+                reason_codes.append(str(result["interpretation_method"]))
+            row.update({
+                "category_id": category_id,
+                "demandId": raw.get("demand_id", ""),
+                "catalogId": raw.get("catalog_id", ""),
+                "categoryId": category_id,
+                "taxonomyVersion": str(payload.get("version", "v2.2")),
+                "status": status,
+                "effectiveRequirementMode": str(result["effective_requirement_mode"]),
+                "constraints": json.dumps(constraints, ensure_ascii=False, separators=(",", ":")),
+                "preferenceGroups": json.dumps(result.get("preference_groups", []), ensure_ascii=False, separators=(",", ":")),
+                "passthroughText": requirement if status == "PASSTHROUGH" else None,
+                "reasonCodes": json.dumps(reason_codes, ensure_ascii=False, separators=(",", ":")),
+                "label": label,
+                "facet_values": json.dumps(facet_values, ensure_ascii=False, separators=(",", ":")),
+                "parserVersion": RUNTIME_VERSION,
+                "processed_at": now,
+            })
+        except Exception as error:  # isolate one malformed demand from the batch
+            row.update({
+                "taxonomyVersion": str(payload.get("version", "v2.2")),
+                "status": "REVIEW",
+                "effectiveRequirementMode": "NONE",
+                "constraints": "[]",
+                "preferenceGroups": "[]",
+                "passthroughText": None,
+                "reasonCodes": json.dumps(["PARSER_EXCEPTION"], ensure_ascii=False),
+                "label": "",
+                "facet_values": "{}",
+                "parserVersion": RUNTIME_VERSION,
+                "processed_at": "",
+                "errorType": type(error).__name__,
+            })
         rows.append(row)
     output = pd.DataFrame(rows)
     counts = output["status"].value_counts().to_dict() if not output.empty else {}
@@ -153,6 +172,7 @@ def run_part_a_batch(
         "rows": len(output),
         "statusCounts": {key: int(counts.get(key, 0)) for key in sorted(STATUSES)},
         "externalLlmCalls": 0,
+        "parserExceptionCount": int(sum(row.get("reasonCodes") == '["PARSER_EXCEPTION"]' for row in rows)),
         "clustering": "NOT_PERFORMED",
         "sellerMatching": "NOT_PERFORMED",
     }

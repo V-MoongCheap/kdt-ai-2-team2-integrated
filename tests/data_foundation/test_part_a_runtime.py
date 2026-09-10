@@ -41,3 +41,49 @@ def test_part_a_returns_backend_contract_without_clustering(tmp_path):
     assert len(json.loads(result.loc[3, "preferenceGroups"])) == 1
     assert summary["externalLlmCalls"] == 0
     assert summary["clustering"] == "NOT_PERFORMED"
+
+
+def test_part_a_isolates_parser_failure_and_preserves_backend_ids(tmp_path, monkeypatch):
+    taxonomy, rules, aliases = _fixtures(tmp_path)
+    demands = pd.DataFrame([
+        {
+            "demand_id": str(index),
+            "catalog_id": str(100 + index),
+            "category_id": "c1",
+            "extra_requirement": "캡슐",
+            "is_substitutable": "true",
+        }
+        for index in range(10)
+    ])
+    class FailingParser:
+        calls = 0
+
+        def interpret(self, category_id, requirement, *, is_substitutable):
+            self.calls += 1
+            if self.calls == 5:
+                raise ValueError("fixture parser failure")
+            return type("Result", (), {
+                "to_dict": lambda self: {
+                    "status": "PARSED",
+                    "effective_requirement_mode": "STRUCTURED",
+                    "constraints": [],
+                    "warnings": [],
+                    "diagnostic_code": None,
+                    "interpretation_method": "fixture",
+                    "preference_groups": [],
+                    "semantic_preferences": [],
+                }
+            })()
+
+    monkeypatch.setattr(
+        "moongcheap_ai.data_foundation.part_a_runtime.DemandConstraintParser.from_taxonomy",
+        classmethod(lambda cls, *args, **kwargs: FailingParser()),
+    )
+    result, summary = run_part_a_batch(demands, taxonomy, rules, aliases)
+    assert len(result) == 10
+    assert result.loc[0, "demandId"] == "0"
+    assert result.loc[0, "categoryId"] == "c1"
+    assert result.loc[4, "status"] == "REVIEW"
+    assert result.loc[4, "processed_at"] == ""
+    assert summary["parserExceptionCount"] == 1
+    assert summary["externalLlmCalls"] == 0
