@@ -41,6 +41,18 @@ python -m moongcheap_ai.data_foundation.runtime_job `
 - `demand.label`에 압축 Label 저장
 - `demand.processed_at`에 성공 처리 시각 저장
 - `processed_at IS NULL` 조건으로 재처리 경쟁 방지
+
+## 카테고리 사전 검증
+
+배치 런타임은 Parser를 호출하기 전에 `category_id`를 확인한다.
+
+- 값이 없으면 `REVIEW / CATEGORY_MISSING`
+- Taxonomy의 등록 Category ID가 아니면 `REVIEW / CATEGORY_NOT_IN_TAXONOMY`
+- 두 경우 모두 Parser를 호출하지 않고 `processed_at`을 기록하지 않는다.
+
+따라서 카테고리 정보가 보완된 뒤 같은 Demand를 재처리할 수 있다. Parser 단독 사용 시의
+`PASSTHROUGH` 규칙과 달리, 배치 진입 단계에서는 확인되지 않은 Category를 유효한
+자연어 요구로 처리하지 않는다.
 - `REVIEW`/예외 행은 완료 처리하지 않음
 
 `constraints`, 상태, 진단 정보는 실제 ERD에 없는 컬럼을 임의로 가정하지

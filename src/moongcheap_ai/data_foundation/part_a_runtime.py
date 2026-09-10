@@ -97,6 +97,43 @@ def run_part_a_batch(
             category_id = str(raw.get("category_id") or raw.get("kan_code") or "")
             if not category_id and catalog_map:
                 category_id = catalog_map.get(str(raw.get("catalog_id", "")), "")
+            # A parser result is only meaningful in a known category.  In
+            # particular, TaxonomyLoader supports a root fallback for legacy
+            # reads; the batch runtime must not use that fallback for demand
+            # labeling because it can turn an unknown category into a valid
+            # looking PASSTHROUGH result.
+            category_reason = ""
+            if not category_id:
+                category_reason = "CATEGORY_MISSING"
+            elif category_id not in taxonomy.categories:
+                category_reason = "CATEGORY_NOT_IN_TAXONOMY"
+            if category_reason:
+                row.update({
+                    "category_id": category_id,
+                    "demandId": raw.get("demand_id", ""),
+                    "catalogId": raw.get("catalog_id", ""),
+                    "categoryId": category_id,
+                    "taxonomyVersion": str(payload.get("version", "v2.2")),
+                    "status": "REVIEW",
+                    "effective_requirement_mode": "NONE",
+                    "constraints": "[]",
+                    "warnings": "[]",
+                    "clauses": "[]",
+                    "interpretation_method": "CATEGORY_PREVALIDATION",
+                    "preference_groups": "[]",
+                    "semantic_preferences": "[]",
+                    "diagnostic_code": category_reason,
+                    "taxonomy_equivalences": "[]",
+                    "reasonCodes": json.dumps([category_reason], ensure_ascii=False),
+                    "label": "",
+                    "facet_values": "{}",
+                    "parserVersion": RUNTIME_VERSION,
+                    # The demand was not parsed, so it must remain eligible
+                    # for a later retry after category data is repaired.
+                    "processed_at": "",
+                })
+                rows.append(row)
+                continue
             requirement = str(raw.get("extra_requirement", "") or "").strip()
             result = parser.interpret(
                 category_id,
@@ -166,6 +203,10 @@ def run_part_a_batch(
         "statusCounts": {key: int(counts.get(key, 0)) for key in sorted(STATUSES)},
         "externalLlmCalls": 0,
         "parserExceptionCount": int(sum(row.get("reasonCodes") == '["PARSER_EXCEPTION"]' for row in rows)),
+        "categoryPrevalidationFailureCount": int(sum(
+            row.get("diagnostic_code") in {"CATEGORY_MISSING", "CATEGORY_NOT_IN_TAXONOMY"}
+            for row in rows
+        )),
         "clustering": "NOT_PERFORMED",
         "sellerMatching": "NOT_PERFORMED",
     }
