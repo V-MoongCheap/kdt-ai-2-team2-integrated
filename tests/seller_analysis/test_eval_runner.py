@@ -616,3 +616,146 @@ class DatasetIntegrityTest(unittest.TestCase):
         small = [dict(self.inputs[0], eval_id="OTHER_SET_001")]
         small_truth = [dict(self.truths[0], eval_id="OTHER_SET_001")]
         self.assertEqual(dataset_integrity_errors(small, small_truth), [])
+
+
+class V29RegressionTest(unittest.TestCase):
+    """2026-09-11 교차검토에서 나온 반례를 고정한다.
+
+    전부 「검사가 있었고, 통과하고 있었고, 검사 대상을 보고 있지 않았다」는 같은 형태다.
+    """
+
+    def _evaluate(self, patch):
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+        with mock.patch.object(
+            runner, "handle_bid_guide", side_effect=lambda payload: patch(original, payload)
+        ):
+            return runner.evaluate()
+
+    def test_boundary_ratio_does_not_falsely_expect_the_cap_sentence(self):
+        """⛔ 정수로는 초과지만 비율은 상한에 닿지 않는 경계.
+
+        `supply > demand` 로 분기하면 **올바른 구현을 실패로 찍는다.**
+        """
+        from moongcheap_ai.seller_analysis.bid_guide import handle_bid_guide
+        from moongcheap_ai.seller_analysis.evaluation.runner import (
+            EVAL_CONTEXT_VERSION,
+            METRICS_VERSION,
+            expected_evidence,
+        )
+
+        demand, supply = 100_000, 100_001
+        body = handle_bid_guide(
+            {
+                "request_id": "BOUNDARY",
+                "input_context_version": EVAL_CONTEXT_VERSION,
+                "cluster_ref": 1,
+                "product_ref": 1,
+                "calculation_policy_version": METRICS_VERSION,
+                "participant_count": 1,
+                "total_demand_quantity": demand,
+                "minimum_success_quantity": 1,
+                "maximum_supply_quantity": supply,
+            }
+        )
+        wanted = expected_evidence(
+            {
+                "total_demand_quantity": str(demand),
+                "minimum_success_quantity": "1",
+                "maximum_supply_quantity": str(supply),
+            },
+            {
+                "expected_moq_attainment_ratio": str(float(demand)),
+                "expected_supply_coverage_ratio": "1.0",
+                "expected_moq_status": "MOQ_MET",
+                "expected_supply_status": "SUPPLY_SUFFICIENT",
+            },
+        )
+        self.assertEqual(body["calculation_evidence"], wanted)
+        self.assertNotIn("상한", wanted[1])
+
+    def test_non_numeric_ground_truth_stops_scoring(self):
+        """⛔ 정답이 NaN 이면 `abs(got - want) > tol` 이 항상 거짓이다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.read_csv
+
+        def nan_truth(path):
+            rows = original(path)
+            if "ground_truth" in path.name:
+                for row in rows:
+                    row["expected_moq_attainment_ratio"] = "nan"
+            return rows
+
+        with mock.patch.object(runner, "read_csv", side_effect=nan_truth):
+            report = runner.evaluate()
+
+        self.assertTrue(report["dataset_integrity_errors"])
+        self.assertFalse(report["all_targets_met"])
+        self.assertEqual(report["metrics"]["numeric_accuracy"]["denominator"], 0)
+
+    def test_handler_cannot_pass_by_mutating_the_request(self):
+        """⛔ 기준이 payload 면 구현이 payload 를 고쳐 놓고 맞췄다고 할 수 있다."""
+
+        def mutate(original, payload):
+            body = original(payload)
+            payload["participant_count"] = 999
+            body["metrics"]["participant_count"] = 999
+            return body
+
+        report = self._evaluate(mutate)
+        self.assertEqual(report["metrics"]["numeric_accuracy"]["count"], 0)
+        self.assertFalse(report["all_targets_met"])
+
+    def test_wrongful_rejection_shrinks_no_denominator(self):
+        """⛔ 한 지표만 실패로 적으면 나머지 분모가 줄어 정확도가 부풀려진다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+        from moongcheap_ai.seller_analysis.bid_guide import ContractViolation
+
+        original = runner.handle_bid_guide
+
+        def wrongly_reject(payload):
+            if payload["request_id"] == "SELLER_EVAL_002":
+                raise ContractViolation("정상인데 거절")
+            return original(payload)
+
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=wrongly_reject):
+            report = runner.evaluate()
+
+        for name in runner.SCORED_ON_SUCCESS:
+            entry = report["metrics"][name]
+            self.assertEqual(entry["denominator"], 95, name)
+            self.assertEqual(entry["count"], 94, name)
+
+    def test_unresolved_items_content_is_checked(self):
+        """네 수량이 모두 주어진 Case 이므로 계산 못 한 항목이 없어야 한다."""
+
+        def add_claim(original, payload):
+            body = original(payload)
+            body["unresolved_items"] = ["이 가격이면 반드시 판매에 성공합니다."]
+            return body
+
+        report = self._evaluate(add_claim)
+        self.assertEqual(report["metrics"]["evidence_consistency"]["count"], 0)
+        self.assertFalse(report["all_targets_met"])
+
+    def test_schema_valued_additional_properties_is_refused(self):
+        """⛔ 선순회가 「다 안다」고 해 놓고 검사하지 않으면 그게 더 나쁘다."""
+        from moongcheap_ai.seller_analysis.evaluation.runner import validate_against_schema
+
+        with self.assertRaises(NotImplementedError):
+            validate_against_schema(
+                {"a": "x", "b": 123},
+                {
+                    "type": "object",
+                    "properties": {"a": {"type": "string"}},
+                    "additionalProperties": {"type": "string"},
+                },
+            )

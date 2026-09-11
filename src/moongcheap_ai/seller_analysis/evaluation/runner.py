@@ -46,6 +46,8 @@ RESPONSE_SCHEMA = REPO_ROOT / "docs" / "contracts" / "seller_bid_guide_response_
 OUTPUT_ROOT = REPO_ROOT / "data" / "reports" / "seller_analysis_eval"
 
 DATASET_VERSION = "seller_analysis_eval_v1"
+# 계산에 쓰이지 않는 참조값. 기대값을 만들 때도 이 상수를 쓴다.
+EVAL_CONTEXT_VERSION = "eval-context-v1"
 
 # 21절 「Seller Analysis 목표 지표」.
 TARGETS = {
@@ -108,6 +110,16 @@ REASON_TEMPLATES = {
     ),
 }
 
+# 성공 Case 하나가 채워야 할 지표들. 어느 한 곳에서 빠지면 그 지표만 분모가 줄어
+# 정확도가 부풀려지므로, 실패 경로에서도 이 목록을 그대로 쓴다.
+SCORED_ON_SUCCESS = (
+    "numeric_accuracy",
+    "moq_status_accuracy",
+    "supply_status_accuracy",
+    "evidence_consistency",
+    "response_schema_validation_success",
+)
+
 OPPOSITE_STATUS = {
     "MOQ_MET": "MOQ_NOT_MET",
     "MOQ_NOT_MET": "MOQ_MET",
@@ -132,7 +144,7 @@ def as_request(row: dict[str, str]) -> Any:
     """
     payload: dict[str, Any] = {
         "request_id": row["eval_id"],
-        "input_context_version": "eval-context-v1",
+        "input_context_version": EVAL_CONTEXT_VERSION,
         # 계산에 쓰이지 않는 참조값이다. 정수 계약이므로 eval_id 의 일련번호를 쓴다.
         "cluster_ref": int(row["eval_id"].rsplit("_", 1)[-1]),
         "product_ref": int(row["eval_id"].rsplit("_", 1)[-1]),
@@ -197,10 +209,14 @@ def expected_evidence(row: dict[str, str], truth: dict[str, str]) -> list[str]:
     moq_met = truth["expected_moq_status"] == "MOQ_MET"
     supply_met = truth["expected_supply_status"] == "SUPPLY_SUFFICIENT"
 
-    if supply > demand:
+    # ⛔ 상한 분기를 `supply > demand` 로 두면 **올바른 구현을 실패로 찍는다.**
+    #    총수요 100000·공급 100001 에서 정수로는 초과지만 비율은 `round(1.00001, 4)`
+    #    = `1.0` 이라 상한이 걸리지 않는다. 2026-09-11 재현에서 구현은 상한 문장을
+    #    쓰지 않았는데 평가기만 상한 문장을 기대했다. 판정은 **비율 자리수로** 한다.
+    raw = round(supply / demand, RATIO_PRECISION)
+    if raw > SUPPLY_COVERAGE_CAP:
         # 상한을 적용한 경우. 정답 CSV 는 상한을 **건 뒤**의 1.0 만 갖고 있어
         # 상한 전 값은 여기서 16절 산식으로 다시 낸다. 입력만 쓰므로 순환은 아니다.
-        raw = round(supply / demand, RATIO_PRECISION)
         supply_line = (
             f"판매자 최대 공급 가능 수량 {supply}개를 총수요 {demand}개로 나눈 결과는 "
             f"약 {_display(raw, met=True)}이며, "
@@ -267,9 +283,15 @@ def check_schema(schema: Any, path: str = "$") -> None:
         check_schema(sub, f"{path}.{name}")
     if "items" in schema:
         check_schema(schema["items"], f"{path}[]")
-    # 계약은 지금 `false` 만 쓴다. 스키마를 값으로 두는 형태가 생기면 여기서 걸린다.
-    if not isinstance(schema.get("additionalProperties", False), bool):
-        check_schema(schema["additionalProperties"], f"{path}.*")
+    # ⛔ 계약은 지금 `false` 만 쓴다. 스키마를 값으로 두는 형태는 `_validate` 가
+    #    **구현하지 않았으므로** 걸어 보지 않고 거절한다. 2026-09-11 재현에서
+    #    `additionalProperties: {"type": "string"}` 에 숫자를 넣어도 오류가 없었다.
+    #    선순회가 「이 스키마는 다 안다」고 말해 놓고 검사하지 않으면 그게 더 나쁘다.
+    extra = schema.get("additionalProperties", False)
+    if extra is not False:
+        raise NotImplementedError(
+            f"{path}: additionalProperties 는 `false` 만 구현했다 — {extra!r}"
+        )
 
 
 def validate_against_schema(value: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
@@ -353,6 +375,21 @@ def dataset_integrity_errors(
             errors.append(f"{label}에 중복된 eval_id {duplicated}")
         sets[label] = set(ids)
 
+    # ⛔ 정답이 `NaN` 이면 `abs(got - want) > tol` 이 **항상 거짓**이라 무엇을 내놔도
+    #    맞은 것이 된다. 2026-09-11 재현에서 정답 비율을 전부 `nan` 으로 바꿔도
+    #    `numeric_accuracy` 가 95/95 였다. 숫자가 아닌 정답은 정답이 아니다.
+    for row in truth_rows:
+        if row.get("expected_request_result") == "REJECTED":
+            continue
+        for name in ("expected_moq_attainment_ratio", "expected_supply_coverage_ratio"):
+            try:
+                value = float(row[name])
+            except (KeyError, TypeError, ValueError):
+                errors.append(f"{row.get('eval_id')}: {name} 이 수가 아니다")
+                continue
+            if not math.isfinite(value) or value < 0:
+                errors.append(f"{row.get('eval_id')}: {name} 이 {value}")
+
     only_input = sorted(sets["평가셋"] - sets["정답"])
     only_truth = sorted(sets["정답"] - sets["평가셋"])
     if only_input:
@@ -402,7 +439,11 @@ def evaluate() -> dict[str, Any]:
                 if is_pii_case:
                     score("pii_input_rejection_accuracy", True, eval_id)
             else:
-                score("numeric_accuracy", False, eval_id, f"정상 Case 가 거절됐다: {exc}")
+                # ⛔ `numeric_accuracy` 만 실패로 적으면 **나머지 지표의 분모가 줄어든다.**
+                #    2026-09-11 재현에서 정상 1건을 잘못 거절하자 numeric 은 94/95 인데
+                #    상태·근거·schema 는 94/94 로 나왔다. 채점하지 못한 것은 통과가 아니다.
+                for metric in SCORED_ON_SUCCESS:
+                    score(metric, False, eval_id, f"정상 Case 가 거절됐다: {exc}")
             continue
 
         if rejected_expected:
@@ -439,12 +480,9 @@ def evaluate() -> dict[str, Any]:
 
         if schema_errors:
             # ⛔ 분모에서 빼지 않는다. 빼면 채점하지 못한 건이 정확도를 **올려** 준다.
-            for metric in (
-                "numeric_accuracy",
-                "moq_status_accuracy",
-                "supply_status_accuracy",
-                "evidence_consistency",
-            ):
+            for metric in SCORED_ON_SUCCESS:
+                if metric == "response_schema_validation_success":
+                    continue  # 바로 위에서 이미 매겼다
                 score(metric, False, eval_id, "응답이 계약 스키마를 벗어나 채점하지 못했다")
             continue
 
@@ -470,23 +508,30 @@ def evaluate() -> dict[str, Any]:
                     float(truth["expected_supply_coverage_ratio"]),
                 ),
             )
-            if abs(got - want) > NUMERIC_TOLERANCE
+            if not math.isfinite(got)
+            or not math.isfinite(want)
+            or abs(got - want) > NUMERIC_TOLERANCE
         ]
+        # ⛔ 기준을 `payload` 로 두면 **구현이 payload 를 고쳐 놓고 맞췄다고 할 수 있다.**
+        #    2026-09-11 재현에서 호출부가 입력과 응답의 참여자 수를 함께 999 로 바꾸자
+        #    전 지표 95/95 에 `all_targets_met=True` 가 나왔다. `payload` 는 우리가
+        #    넘겨 준 뒤 구현이 만질 수 있는 객체다. **평가셋 CSV 를 기준으로 삼는다.**
+        row = inputs[eval_id]
         wrong += [
             name
             for name, got, want in (
-                ("metrics.participant_count", metrics["participant_count"], payload["participant_count"]),
+                (
+                    "metrics.participant_count",
+                    metrics["participant_count"],
+                    int(row["participant_count"]),
+                ),
                 (
                     "metrics.total_demand_quantity",
                     metrics["total_demand_quantity"],
-                    payload["total_demand_quantity"],
+                    int(row["total_demand_quantity"]),
                 ),
-                ("request_id", body["request_id"], payload["request_id"]),
-                (
-                    "input_context_version",
-                    body["input_context_version"],
-                    payload["input_context_version"],
-                ),
+                ("request_id", body["request_id"], eval_id),
+                ("input_context_version", body["input_context_version"], EVAL_CONTEXT_VERSION),
             )
             if got != want
         ]
@@ -522,6 +567,14 @@ def evaluate() -> dict[str, Any]:
             truth["expected_supply_status"] == "SUPPLY_SUFFICIENT",
         ]
 
+        # ⛔ `unresolved_items` 를 아무도 보지 않았다. 2026-09-11 재현에서 금지된
+        #    확정 예측 문장을 넣어도 전 지표가 통과했다. 이 평가셋은 계산에 필요한 네
+        #    수량을 **모두** 주므로 계산하지 못할 항목이 없다 — 기대값은 빈 목록이다.
+        #    ⚠️ 「항상 비어 있어야 한다」는 운영 정책이 아니다. 채움 규칙의 형식은
+        #    명세서 8-2 에서 확정 대기이고, 여기서는 **이 평가셋의 입력**에서 나온
+        #    기대값일 뿐이다.
+        unresolved_ok = body["unresolved_items"] == []
+
         evidence_lines = body["calculation_evidence"]
         wanted = expected_evidence(inputs[eval_id], truth)
         mismatched = [
@@ -540,6 +593,7 @@ def evaluate() -> dict[str, Any]:
             "evidence_consistency",
             not mismatched
             and reason_ok
+            and unresolved_ok
             # 반대 상태가 같이 실려 있으면 설명이 스스로 모순이다. 동일성 대조로 이미
             # 걸리지만, 기대 문장 쪽이 잘못 만들어져도 이 조건은 남아 있게 둔다.
             and not any(token in evidence for token in opposite),
@@ -549,6 +603,7 @@ def evaluate() -> dict[str, Any]:
                 for part in (
                     f"근거 {[i + 1 for i in mismatched]}번째 줄이 기대와 다르다" if mismatched else "",
                     "" if reason_ok else "판단 사유가 템플릿과 다르다",
+                    "" if unresolved_ok else "계산 못 한 항목이 없는데 unresolved_items 가 비어 있지 않다",
                 )
                 if part
             ),
@@ -624,9 +679,12 @@ def main() -> int:
         print(f"{name:<38}{value:>9}{target:>9}   {mark}{note}")
     print()
     if report["dataset_integrity_errors"]:
-        print("FAIL 데이터셋 무결성")
-        for line in report["dataset_integrity_errors"]:
+        errors = report["dataset_integrity_errors"]
+        print(f"FAIL 데이터셋 무결성 {len(errors)}건")
+        for line in errors[:10]:
             print(f"   {line}")
+        if len(errors) > 10:
+            print(f"   … 외 {len(errors) - 10}건")
         print()
     if report["failures"]:
         print(f"FAIL 실패 {len(report['failures'])}건")
