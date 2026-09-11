@@ -759,3 +759,38 @@ class V29RegressionTest(unittest.TestCase):
                     "additionalProperties": {"type": "string"},
                 },
             )
+
+
+class ArtifactHashTest(unittest.TestCase):
+    """같은 버전 이름이 같은 내용을 가리키는지 리포트로 확인할 수 있어야 한다."""
+
+    def test_report_records_every_input_that_changes_the_result(self):
+        from moongcheap_ai.seller_analysis.evaluation.runner import evaluate
+
+        digests = evaluate()["artifact_sha256"]
+        # 데이터만 고정해서는 재현되지 않는다. 채점 규칙과 계산 구현도 결과를 바꾼다.
+        self.assertEqual(
+            sorted(digests),
+            ["calculator", "eval_csv", "ground_truth_csv", "response_schema", "runner"],
+        )
+        for name, value in digests.items():
+            self.assertRegex(value, r"^[0-9a-f]{64}$", name)
+
+    def test_same_version_name_with_different_content_is_visible(self):
+        """⛔ 축소한 평가셋도 `dataset_version` 은 그대로다. 해시가 그 차이를 드러낸다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        full = runner.evaluate()
+        original = runner.read_csv
+        with mock.patch.object(
+            runner, "read_csv", side_effect=lambda p: original(p)[:5] + original(p)[-5:]
+        ):
+            clipped = runner.evaluate()
+
+        # 버전 문자열은 같다 — 그래서 해시가 필요하다.
+        self.assertEqual(full["dataset_version"], clipped["dataset_version"])
+        self.assertNotEqual(full["case_count"], clipped["case_count"])
+        # 파일 자체는 건드리지 않았으므로 해시는 같다. 해시는 **파일**의 동일성을 말한다.
+        self.assertEqual(full["artifact_sha256"], clipped["artifact_sha256"])

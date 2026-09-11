@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 from datetime import datetime, timezone
@@ -351,6 +352,32 @@ def _validate(value: Any, schema: dict[str, Any], path: str) -> list[str]:
     return errors
 
 
+def artifact_sha256() -> dict[str, str]:
+    """결과를 좌우하는 파일들의 해시를 남긴다.
+
+    「AI 평가 데이터셋 및 평가 지표 정의서」 26절이 *"동일한 Version 의 Evaluation
+    Dataset 을 사용한다"* 고 정하는데, **버전 문자열만으로는 그것을 확인할 수 없다.**
+    2026-09-11 재현에서 입력·정답을 양쪽 함께 줄여도 `dataset_version` 은 그대로
+    `seller_analysis_eval_v1` 이었고 전 지표가 목표를 달성했다.
+
+    ⚠️ 해시는 **「내용이 같은가」만** 말한다. 어느 내용이 승인된 것인지는 말하지 않는다.
+       정책·데이터셋 버전을 어떻게 뗄지는 파트 확정 대기다. 두 리포트를 비교할 때
+       해시가 다르면 **같은 버전 이름이어도 다른 것을 잰 것**이라는 뜻이다.
+    """
+    targets = {
+        "eval_csv": EVAL_CSV,
+        "ground_truth_csv": GROUND_TRUTH_CSV,
+        "response_schema": RESPONSE_SCHEMA,
+        # 채점 규칙과 계산 구현도 결과를 바꾼다. 데이터만 고정해서는 재현되지 않는다.
+        "runner": Path(__file__).resolve(),
+        "calculator": REPO_ROOT / "src" / "moongcheap_ai" / "seller_analysis" / "bid_guide.py",
+    }
+    return {
+        name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for name, path in targets.items()
+    }
+
+
 def dataset_integrity_errors(
     input_rows: list[dict[str, str]], truth_rows: list[dict[str, str]]
 ) -> list[str]:
@@ -636,6 +663,7 @@ def evaluate() -> dict[str, Any]:
     return {
         "dataset_version": DATASET_VERSION,
         "dataset_integrity_errors": integrity_errors,
+        "artifact_sha256": artifact_sha256(),
         "numeric_tolerance": NUMERIC_TOLERANCE,
         "calculation_policy_version": METRICS_VERSION,
         "evaluated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
@@ -692,6 +720,10 @@ def main() -> int:
             print(f"   {item['eval_id']} · {item['metric']} · {item['detail']}")
     else:
         print("실패 없음")
+    digests = report["artifact_sha256"]
+    print("산출물 해시 (앞 12자리)")
+    for name in ("eval_csv", "ground_truth_csv", "response_schema", "runner", "calculator"):
+        print(f"   {name:<20}{digests[name][:12]}")
     print(f"\n리포트  {path.relative_to(REPO_ROOT)}")
     return 0 if report["all_targets_met"] else 1
 
