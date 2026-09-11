@@ -278,3 +278,135 @@ class NumericToleranceTest(unittest.TestCase):
         from moongcheap_ai.seller_analysis.evaluation.runner import NUMERIC_TOLERANCE, evaluate
 
         self.assertEqual(evaluate()["numeric_tolerance"], NUMERIC_TOLERANCE)
+
+
+class EvidenceNumberTest(unittest.TestCase):
+    """근거 문장의 **숫자**가 실제 입력·계산 결과와 같은지 본다.
+
+    형태만 보는 검사는 2026-09-11 재현에서 수량을 `999999` 로 바꿔도 66/95 를 줬다.
+    """
+
+    def test_tampered_numbers_fail_evidence_consistency(self):
+        import re
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+
+        def tampered(payload):
+            body = original(payload)
+            body["calculation_evidence"] = [
+                re.sub(r"\d+", "999999", line) for line in body["calculation_evidence"]
+            ]
+            return body
+
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=tampered):
+            report = runner.evaluate()
+        entry = report["metrics"]["evidence_consistency"]
+        self.assertEqual(entry["count"], 0)
+        self.assertEqual(entry["denominator"], 95)
+
+    def test_single_digit_change_fails_evidence_consistency(self):
+        """한 건, 한 자리만 바꿔도 그 한 건이 실패해야 한다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+
+        def bumped(payload):
+            body = original(payload)
+            if payload["request_id"] == "SELLER_EVAL_002":
+                body["calculation_evidence"][0] = body["calculation_evidence"][0].replace(
+                    "총수요 ", "총수요 1", 1
+                )
+            return body
+
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=bumped):
+            report = runner.evaluate()
+        self.assertEqual(report["metrics"]["evidence_consistency"]["count"], 94)
+
+    def test_expected_sentences_come_from_the_dataset(self):
+        """기대 문장은 평가셋·정답만으로 만든다 — 구현을 부르지 않는다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        row = {
+            "total_demand_quantity": "130",
+            "minimum_success_quantity": "100",
+            "maximum_supply_quantity": "150",
+        }
+        truth = {
+            "expected_moq_attainment_ratio": "1.3",
+            "expected_supply_coverage_ratio": "1.0",
+            "expected_moq_status": "MOQ_MET",
+            "expected_supply_status": "SUPPLY_SUFFICIENT",
+        }
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=AssertionError):
+            lines = runner.expected_evidence(row, truth)
+        # 「AI API Contract」 5절 「Seller Analysis API」 의 상한 예시 문장 그대로다.
+        self.assertEqual(
+            lines[1],
+            "판매자 최대 공급 가능 수량 150개를 총수요 130개로 나눈 결과는 "
+            "약 1.15이며, 계산 정책의 상한 1.0을 적용했습니다.",
+        )
+
+
+class SchemaFirstTest(unittest.TestCase):
+    """계약을 벗어난 응답 한 건이 나머지 94건의 채점을 막지 않아야 한다."""
+
+    def _evaluate_with(self, broken):
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+
+        def patched(payload):
+            return broken(original(payload))
+
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=patched):
+            return runner.evaluate()
+
+    def test_missing_metrics_is_recorded_not_raised(self):
+        def drop(body):
+            body.pop("metrics")
+            return body
+
+        report = self._evaluate_with(drop)
+        self.assertEqual(report["metrics"]["response_schema_validation_success"]["count"], 0)
+        self.assertEqual(report["metrics"]["numeric_accuracy"]["count"], 0)
+        self.assertFalse(report["all_targets_met"])
+
+    def test_string_ratio_is_recorded_not_raised(self):
+        def stringify(body):
+            body["metrics"]["supply_coverage_ratio"] = str(body["metrics"]["supply_coverage_ratio"])
+            return body
+
+        report = self._evaluate_with(stringify)
+        self.assertEqual(report["metrics"]["response_schema_validation_success"]["count"], 0)
+        self.assertFalse(report["all_targets_met"])
+
+    def test_broken_case_stays_in_every_denominator(self):
+        """⛔ 채점하지 못한 건을 분모에서 빼면 정확도가 **올라간다.**"""
+
+        def break_one(body):
+            if body["request_id"] == "SELLER_EVAL_002":
+                body.pop("metrics")
+            return body
+
+        report = self._evaluate_with(break_one)
+        for name in (
+            "numeric_accuracy",
+            "moq_status_accuracy",
+            "supply_status_accuracy",
+            "evidence_consistency",
+            "response_schema_validation_success",
+        ):
+            entry = report["metrics"][name]
+            self.assertEqual(entry["denominator"], 95, name)
+            self.assertEqual(entry["count"], 94, name)
+        self.assertFalse(report["all_targets_met"])
+

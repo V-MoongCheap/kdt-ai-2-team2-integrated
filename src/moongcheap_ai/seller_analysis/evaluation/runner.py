@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -70,21 +69,13 @@ ZERO_TARGETS = {"pii_leakage_rate": 0.0}
 #    흡수하면 된다 — 양쪽이 같은 자리수로 반올림하므로 그 이상은 실제 계산 오류다.
 NUMERIC_TOLERANCE = 1e-9
 
-# 응답에 절대 실려서는 안 되는 개인 단위 흔적.
-# 계약이 정한 근거 문장 세 줄의 형태. 구현의 f-string 을 import 하지 않고 여기 다시 적는다.
-EVIDENCE_TEMPLATES = (
-    re.compile(r"총수요 \d+개를 최소 성사 수량 \d+개로 나눈 결과는 .+입니다\."),
-    # 두 형태다. 상한을 적용한 경우 계약(5절) 예시와 같은 문장을 쓴다.
-    re.compile(
-        r"판매자 최대 공급 가능 수량 \d+개를 총수요 \d+개로 나눈 결과는 "
-        r"(?:.+입니다\.|약 .+이며, 계산 정책의 상한 1\.0을 적용했습니다\.)"
-    ),
-    re.compile(
-        r"상태 판정은 표시용 반올림 값이 아니라 원본 정수 비교로 했습니다: "
-        r"\d+ vs \d+ → (?:MOQ_MET|MOQ_NOT_MET), \d+ vs \d+ → "
-        r"(?:SUPPLY_SUFFICIENT|SUPPLY_INSUFFICIENT)\."
-    ),
-)
+# 근거 문장을 만들 때 쓰는 자리수·상한. ⛔ `bid_guide` 에서 import 하지 않는다.
+# 계약(「AI API Contract」 5절 「Seller Analysis API」)과 「AI 파트 → 백엔드 스키마
+# 명세(초안)」 2절의 `numeric(5,4)` 에서 **다시 적은** 값이다. 구현이 이 값을 바꾸면
+# 기대 문장과 어긋나 평가가 실패해야 한다 — 같이 따라 움직이면 검사가 아니다.
+RATIO_PRECISION = 4
+DISPLAY_PRECISION = 2
+SUPPLY_COVERAGE_CAP = 1.0
 
 OPPOSITE_STATUS = {
     "MOQ_MET": "MOQ_NOT_MET",
@@ -93,6 +84,7 @@ OPPOSITE_STATUS = {
     "SUPPLY_INSUFFICIENT": "SUPPLY_SUFFICIENT",
 }
 
+# 응답에 절대 실려서는 안 되는 개인 단위 흔적.
 PII_MARKERS = ("member_id", "user_id", "buyer_id", "participant_id", "MEMBER_", "contact")
 
 
@@ -139,6 +131,64 @@ def derive_status(metrics: dict[str, Any]) -> tuple[str, str]:
         else "SUPPLY_INSUFFICIENT"
     )
     return moq, supply
+
+
+def _display(ratio: float, *, met: bool) -> str:
+    """비율을 사람이 읽는 자리수로 줄인다. 표시값이 판정을 뒤집지 못하게 막는다.
+
+    명세서 5.4절 「AI 처리 규칙」 — 판정은 반올림 전 정수 비교로 끝난다. 999/1000 을
+    소수 둘째 자리에서 반올림하면 `1.00` 이 되어 미달 판정과 같은 문장 안에서 숫자가
+    어긋난다. 경계를 넘길 값은 경계 바로 앞으로 되돌린다.
+    """
+    text = f"{ratio:.{DISPLAY_PRECISION}f}"
+    if met and float(text) < 1.0:
+        return f"{1.0:.{DISPLAY_PRECISION}f}"
+    if not met and float(text) >= 1.0:
+        return f"{1.0 - 10 ** -DISPLAY_PRECISION:.{DISPLAY_PRECISION}f}"
+    return text
+
+
+def expected_evidence(row: dict[str, str], truth: dict[str, str]) -> list[str]:
+    r"""평가셋과 정답만으로 근거 세 문장을 **글자 그대로** 만든다.
+
+    ⛔ 예전에는 `\d+` 정규식으로 「형태」만 봤다. **그것으로는 부족했다** — 문장 속
+       수량을 `999999` 로 바꿔도 형태는 그대로라 `evidence_consistency` 가 100% 로
+       나왔다. 계약이 `calculation_evidence` 를 *"템플릿으로만 만들며 생성 모델이
+       문장을 새로 쓰지 않는다"* 고 정하므로, 기대 문장을 여기서 완성해 **동일성**으로
+       대조한다. 숫자 한 자리만 달라도 실패한다.
+
+    ⛔ 수량은 **평가 입력 CSV**, 비율은 **정답 CSV** 에서 온다. 구현이나 그 응답에서
+       가져오지 않는다 — 채점 기준을 채점 대상이 만들면 검사가 아니다.
+    """
+    demand = int(row["total_demand_quantity"])
+    moq = int(row["minimum_success_quantity"])
+    supply = int(row["maximum_supply_quantity"])
+    moq_met = truth["expected_moq_status"] == "MOQ_MET"
+    supply_met = truth["expected_supply_status"] == "SUPPLY_SUFFICIENT"
+
+    if supply > demand:
+        # 상한을 적용한 경우. 정답 CSV 는 상한을 **건 뒤**의 1.0 만 갖고 있어
+        # 상한 전 값은 여기서 16절 산식으로 다시 낸다. 입력만 쓰므로 순환은 아니다.
+        raw = round(supply / demand, RATIO_PRECISION)
+        supply_line = (
+            f"판매자 최대 공급 가능 수량 {supply}개를 총수요 {demand}개로 나눈 결과는 "
+            f"약 {_display(raw, met=True)}이며, "
+            f"계산 정책의 상한 {SUPPLY_COVERAGE_CAP:.1f}을 적용했습니다."
+        )
+    else:
+        supply_line = (
+            f"판매자 최대 공급 가능 수량 {supply}개를 총수요 {demand}개로 나눈 결과는 "
+            f"{_display(float(truth['expected_supply_coverage_ratio']), met=supply_met)}입니다."
+        )
+
+    return [
+        f"총수요 {demand}개를 최소 성사 수량 {moq}개로 나눈 결과는 "
+        f"{_display(float(truth['expected_moq_attainment_ratio']), met=moq_met)}입니다.",
+        supply_line,
+        f"상태 판정은 표시용 반올림 값이 아니라 원본 정수 비교로 했습니다: "
+        f"{demand} vs {moq} → {truth['expected_moq_status']}, "
+        f"{supply} vs {demand} → {truth['expected_supply_status']}.",
+    ]
 
 
 # 계약이 실제로 쓰는 키워드만 구현한다. 이 목록에 없는 키워드가 계약에 새로 생기면
@@ -217,10 +267,6 @@ def validate_against_schema(value: Any, schema: dict[str, Any], path: str = "$")
     return errors
 
 
-def schema_ok(body: dict[str, Any], schema: dict[str, Any]) -> bool:
-    return not validate_against_schema(body, schema)
-
-
 def evaluate() -> dict[str, Any]:
     inputs = {row["eval_id"]: row for row in read_csv(EVAL_CSV)}
     truths = read_csv(GROUND_TRUTH_CSV)
@@ -262,6 +308,42 @@ def evaluate() -> dict[str, Any]:
                 score("pii_input_rejection_accuracy", False, eval_id, "개인 단위 필드를 통과시켰다")
             continue
 
+        # ⛔ **스키마 검증이 필드 접근보다 먼저다.** 2026-09-11 이전에는 `body["metrics"]`
+        #    를 먼저 읽었다. `metrics` 가 빠지면 `KeyError`, 비율이 문자열이면
+        #    `TypeError` 로 **평가 전체가 그 자리에서 멈췄다** — 한 건의 계약 위반이
+        #    나머지 94건의 채점까지 못 하게 만든다. 계약을 벗어난 응답은 그 건만
+        #    실패로 적고 다음 건으로 간다.
+        schema_errors = validate_against_schema(body, schema)
+        score(
+            "response_schema_validation_success",
+            not schema_errors,
+            eval_id,
+            "; ".join(schema_errors[:3]),
+        )
+
+        # 20절 출력 — 개별 Consumer 식별정보가 응답에 없어야 한다. 문자열만 보면 되므로
+        # 스키마 위반 여부와 무관하게 센다. `default=str` 은 계약 밖 타입이 실려 와도
+        # 직렬화가 여기서 죽지 않게 하려는 것이다.
+        serialized = json.dumps(body, ensure_ascii=False, default=str)
+        leaked = [marker for marker in PII_MARKERS if marker in serialized]
+        counts["pii_leakage_rate"][1] += 1
+        if leaked:
+            counts["pii_leakage_rate"][0] += 1
+            failures.append(
+                {"eval_id": eval_id, "metric": "pii_leakage_rate", "detail": ",".join(leaked)}
+            )
+
+        if schema_errors:
+            # ⛔ 분모에서 빼지 않는다. 빼면 채점하지 못한 건이 정확도를 **올려** 준다.
+            for metric in (
+                "numeric_accuracy",
+                "moq_status_accuracy",
+                "supply_status_accuracy",
+                "evidence_consistency",
+            ):
+                score(metric, False, eval_id, "응답이 계약 스키마를 벗어나 채점하지 못했다")
+            continue
+
         metrics = body["metrics"]
         score(
             "numeric_accuracy",
@@ -289,15 +371,19 @@ def evaluate() -> dict[str, Any]:
         #
         # ⛔ 「기대 상태 문자열이 들어 있다」만 보지 않는다. 그 검사는 **덧붙은 문장을
         #    보지 못한다** — 2026-09-09 재현에서 "모든 수량 계산은 잘못됐습니다" 를
-        #    한 줄 더 넣어도 95/95 였다. 계약은 `calculation_evidence` 를
-        #    *"템플릿으로만 만들며 생성 모델이 문장을 새로 쓰지 않는다"* 고 정하므로,
-        #    **줄 수와 각 줄의 형태**가 곧 검사 대상이다. 아래 정규식은 구현에서
-        #    가져오지 않고 계약 문장에서 다시 적은 것이다(정답을 구현이 만들지 않는다).
+        #    한 줄 더 넣어도 95/95 였다.
+        # ⛔ **형태만 보지도 않는다.** 2026-09-11 재현에서 문장 속 수량을 `999999` 로
+        #    바꿔도 정규식은 그대로 통과했다. 기대 문장을 평가셋·정답으로 완성해
+        #    **한 글자씩** 대조한다. 줄 수·형태·상태 코드·숫자가 한꺼번에 걸린다.
         evidence_lines = body["calculation_evidence"]
-        template_ok = len(evidence_lines) == len(EVIDENCE_TEMPLATES) and all(
-            pattern.fullmatch(line)
-            for pattern, line in zip(EVIDENCE_TEMPLATES, evidence_lines)
-        )
+        wanted = expected_evidence(inputs[eval_id], truth)
+        mismatched = [
+            index
+            for index in range(max(len(wanted), len(evidence_lines)))
+            if index >= len(evidence_lines)
+            or index >= len(wanted)
+            or evidence_lines[index] != wanted[index]
+        ]
         evidence = " ".join(evidence_lines)
         opposite = (
             OPPOSITE_STATUS[truth["expected_moq_status"]],
@@ -305,26 +391,13 @@ def evaluate() -> dict[str, Any]:
         )
         score(
             "evidence_consistency",
-            template_ok
-            and truth["expected_moq_status"] in evidence
-            and truth["expected_supply_status"] in evidence
-            # 반대 상태가 같이 실려 있으면 설명이 스스로 모순이다.
+            not mismatched
+            # 반대 상태가 같이 실려 있으면 설명이 스스로 모순이다. 동일성 대조로 이미
+            # 걸리지만, 기대 문장 쪽이 잘못 만들어져도 이 조건은 남아 있게 둔다.
             and not any(token in evidence for token in opposite),
             eval_id,
-            "" if template_ok else f"템플릿 밖 문장 {len(evidence_lines)}줄",
+            "" if not mismatched else f"근거 {[i + 1 for i in mismatched]}번째 줄이 기대와 다르다",
         )
-
-        score("response_schema_validation_success", schema_ok(body, schema), eval_id)
-
-        # 20절 출력 — 개별 Consumer 식별정보가 응답에 없어야 한다.
-        serialized = json.dumps(body, ensure_ascii=False)
-        leaked = [marker for marker in PII_MARKERS if marker in serialized]
-        counts["pii_leakage_rate"][1] += 1
-        if leaked:
-            counts["pii_leakage_rate"][0] += 1
-            failures.append(
-                {"eval_id": eval_id, "metric": "pii_leakage_rate", "detail": ",".join(leaked)}
-            )
 
     metrics_report: dict[str, Any] = {}
     for name, (hit, total) in counts.items():
