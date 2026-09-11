@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,36 @@ NUMERIC_TOLERANCE = 1e-9
 RATIO_PRECISION = 4
 DISPLAY_PRECISION = 2
 SUPPLY_COVERAGE_CAP = 1.0
+
+# 판단 사유 문장. (moq_met, supply_met) → 문장.
+#
+# ⛔ 여기서 「독립」의 의미를 분명히 해 둔다. 「AI 통합 영역 최종 선정 및 BE/FE 통합
+#    인터페이스 명세」 3.6절 「FE 화면 반영」 이 준 것은 예시 **한 문장**
+#    (*"현재 총수요는 판매자의 최소 성사 수량을 충족하고 있습니다"*)뿐이고, 네 조합으로
+#    펼친 것은 **우리 파트가 만든 템플릿**이다. 따라서 이 표는 비율·상태처럼 문서에서
+#    유도한 정답이 아니라, **고정된 템플릿을 그대로 지키는지 보는 기준**이다.
+#    그래도 필요하다 — 이 필드는 계약상 AI 가 채워 Backend 의 REASON 에 그대로 저장되고,
+#    「AI 아키텍처 및 안전성 정책 초안」 24절 「Unsupported Claim 제한」 이 금지한
+#    *"이 가격이면 반드시 판매에 성공합니다"* 류가 들어가도 2026-09-11 이전에는
+#    95/95 가 나왔다. 아무도 보지 않는 필드였다.
+REASON_TEMPLATES = {
+    (True, True): (
+        "현재 총수요는 판매자의 최소 성사 수량을 충족하고 있으며, "
+        "공급 가능 수량이 총수요를 충당합니다."
+    ),
+    (True, False): (
+        "현재 총수요는 판매자의 최소 성사 수량을 충족하고 있으나, "
+        "공급 가능 수량이 총수요에 미치지 못합니다."
+    ),
+    (False, True): (
+        "현재 총수요는 판매자의 최소 성사 수량에 미치지 못합니다. "
+        "공급 가능 수량은 현재 총수요를 충당합니다."
+    ),
+    (False, False): (
+        "현재 총수요는 판매자의 최소 성사 수량에 미치지 못하며, "
+        "공급 가능 수량도 총수요에 미치지 못합니다."
+    ),
+}
 
 OPPOSITE_STATUS = {
     "MOQ_MET": "MOQ_NOT_MET",
@@ -211,6 +242,36 @@ _JSON_TYPES: dict[str, Any] = {
 }
 
 
+def check_schema(schema: Any, path: str = "$") -> None:
+    """검증 **전에 스키마 전체**를 훑어 모르는 키워드가 있으면 멈춘다.
+
+    ⛔ 2026-09-11 이전에는 이 검사를 `validate_against_schema` 안에서 **값이 닿은
+       노드에서만** 했다. 그래서 장치가 절반만 작동했다 — `unresolved_items` 가 빈
+       배열이면 그 `items` 가지는 한 번도 걸어 보지 않으므로, 계약이 거기에 새 키워드를
+       들여도 조용히 지나갔다(재현 확인). 값과 무관하게 스키마부터 전부 본다.
+    """
+    if not isinstance(schema, dict):
+        raise NotImplementedError(f"{path}: 스키마 노드는 객체여야 한다 — {type(schema).__name__}")
+
+    unknown = set(schema) - SUPPORTED_SCHEMA_KEYWORDS
+    if unknown:
+        raise NotImplementedError(
+            f"{path}: 이 검증기가 모르는 스키마 키워드 {sorted(unknown)} — "
+            f"계약이 늘었으면 검증기도 늘려야 한다"
+        )
+    declared = schema.get("type")
+    if declared is not None and declared not in _JSON_TYPES:
+        raise NotImplementedError(f"{path}: 모르는 type {declared!r}")
+
+    for name, sub in schema.get("properties", {}).items():
+        check_schema(sub, f"{path}.{name}")
+    if "items" in schema:
+        check_schema(schema["items"], f"{path}[]")
+    # 계약은 지금 `false` 만 쓴다. 스키마를 값으로 두는 형태가 생기면 여기서 걸린다.
+    if not isinstance(schema.get("additionalProperties", False), bool):
+        check_schema(schema["additionalProperties"], f"{path}.*")
+
+
 def validate_against_schema(value: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
     """계약 스키마의 **타입·범위까지** 검사한다.
 
@@ -222,13 +283,11 @@ def validate_against_schema(value: Any, schema: dict[str, Any], path: str = "$")
 
     외부 검증기를 새로 의존하지 않는 방침은 유지하되, 계약이 쓰는 키워드는 전부 본다.
     """
-    unknown = set(schema) - SUPPORTED_SCHEMA_KEYWORDS
-    if unknown:
-        raise NotImplementedError(
-            f"{path}: 이 검증기가 모르는 스키마 키워드 {sorted(unknown)} — "
-            f"계약이 늘었으면 검증기도 늘려야 한다"
-        )
+    check_schema(schema, path)
+    return _validate(value, schema, path)
 
+
+def _validate(value: Any, schema: dict[str, Any], path: str) -> list[str]:
     errors: list[str] = []
     declared = schema.get("type")
     if declared:
@@ -243,6 +302,9 @@ def validate_against_schema(value: Any, schema: dict[str, Any], path: str = "$")
         if "minLength" in schema and len(value) < schema["minLength"]:
             errors.append(f"{path}: minLength={schema['minLength']} 미만")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
+        # ⛔ `inf` 는 어떤 `minimum` 도 통과한다. JSON 에 없는 값이므로 여기서 막는다.
+        if not math.isfinite(value):
+            errors.append(f"{path}: JSON 에 없는 수 {value}")
         if "minimum" in schema and value < schema["minimum"]:
             errors.append(f"{path}: minimum={schema['minimum']} 미만 ({value})")
     if isinstance(value, list):
@@ -251,7 +313,7 @@ def validate_against_schema(value: Any, schema: dict[str, Any], path: str = "$")
         item_schema = schema.get("items")
         if isinstance(item_schema, dict):
             for index, item in enumerate(value):
-                errors.extend(validate_against_schema(item, item_schema, f"{path}[{index}]"))
+                errors.extend(_validate(item, item_schema, f"{path}[{index}]"))
     if isinstance(value, dict):
         properties = schema.get("properties", {})
         for name in schema.get("required", []):
@@ -263,14 +325,56 @@ def validate_against_schema(value: Any, schema: dict[str, Any], path: str = "$")
                     errors.append(f"{path}.{name}: 계약에 없는 키")
         for name, sub in properties.items():
             if name in value:
-                errors.extend(validate_against_schema(value[name], sub, f"{path}.{name}"))
+                errors.extend(_validate(value[name], sub, f"{path}.{name}"))
+    return errors
+
+
+def dataset_integrity_errors(
+    input_rows: list[dict[str, str]], truth_rows: list[dict[str, str]]
+) -> list[str]:
+    """채점 **전에** 평가셋과 정답이 서로 맞는 짝인지 본다.
+
+    ⛔ 2026-09-11 이전에는 입력을 `{row["eval_id"]: row}` 로 바꾸기만 했다. 같은 ID 가
+       두 번 있으면 **뒤엣것이 앞엣것을 조용히 덮고**, 정답은 행 그대로 돌므로 같은 건이
+       두 번 채점됐다. 재현에서 양쪽에 첫 행을 하나씩 더 붙이자 **101건인데 전 지표
+       목표 달성**이 나왔다. 빈 평가셋 방어(`unmeasured_metrics`)만으로는 부족하다.
+
+    ⛔ 건수·시나리오 분포·ID 형식을 여기에 박지 않는다. 그렇게 하면 이 실행기가
+       `seller_analysis_eval_v1` **한 벌 전용**이 되어, 골드셋을 버전별로 늘리는
+       「AI 평가 데이터셋 및 평가 지표 정의서」 26절 방향과 어긋난다. 보는 것은
+       **두 파일이 서로 맞는 짝인가**뿐이다.
+    """
+    errors: list[str] = []
+    sets: dict[str, set[str]] = {}
+    for label, rows in (("평가셋", input_rows), ("정답", truth_rows)):
+        ids = [row["eval_id"] for row in rows]
+        duplicated = sorted({value for value in ids if ids.count(value) > 1})
+        if duplicated:
+            errors.append(f"{label}에 중복된 eval_id {duplicated}")
+        sets[label] = set(ids)
+
+    only_input = sorted(sets["평가셋"] - sets["정답"])
+    only_truth = sorted(sets["정답"] - sets["평가셋"])
+    if only_input:
+        errors.append(f"평가셋에만 있는 eval_id {only_input}")
+    if only_truth:
+        errors.append(f"정답에만 있는 eval_id {only_truth}")
     return errors
 
 
 def evaluate() -> dict[str, Any]:
-    inputs = {row["eval_id"]: row for row in read_csv(EVAL_CSV)}
+    input_rows = read_csv(EVAL_CSV)
     truths = read_csv(GROUND_TRUTH_CSV)
+    # ⛔ 짝이 맞지 않는 데이터셋으로는 한 건도 채점하지 않는다. 부분 채점 결과를
+    #    내놓으면 그 숫자가 어디서 나온 것인지 아무도 되짚을 수 없다.
+    integrity_errors = dataset_integrity_errors(input_rows, truths)
+    inputs = {} if integrity_errors else {row["eval_id"]: row for row in input_rows}
+    if integrity_errors:
+        truths = []
     schema = json.loads(RESPONSE_SCHEMA.read_text(encoding="utf-8"))
+    # 한 건도 채점하기 전에 계약 스키마부터 전부 훑는다. 값이 닿지 않는 가지에 새
+    # 키워드가 들어와 있으면 여기서 멈춘다 — 95건을 다 돌고 「전부 통과」를 내지 않는다.
+    check_schema(schema)
 
     counts = {key: [0, 0] for key in TARGETS}  # [맞은 수, 분모]
     counts["pii_leakage_rate"] = [0, 0]
@@ -345,17 +449,53 @@ def evaluate() -> dict[str, Any]:
             continue
 
         metrics = body["metrics"]
+
+        # ⛔ 비율 두 개만 보지 않는다. `metrics` 는 **네 필드**이고(「AI API Contract」
+        #    5절 「Seller Analysis API」 Response 표), 나머지 둘은 요청값을 그대로
+        #    되돌려 주는 자리다. 정답 CSV 에 없다는 이유로 2026-09-11 이전에는 검사에서
+        #    통째로 빠져 있었다 — `participant_count` 를 999 로 바꿔도 95/95 였다.
+        #    `request_id`·`input_context_version` 도 같다. 이 둘이 어긋나면 그 응답은
+        #    **다른 요청의 결과**이고, 그러면 맞은 숫자도 맞은 것이 아니다.
+        wrong = [
+            name
+            for name, got, want in (
+                (
+                    "moq_attainment_ratio",
+                    metrics["moq_attainment_ratio"],
+                    float(truth["expected_moq_attainment_ratio"]),
+                ),
+                (
+                    "supply_coverage_ratio",
+                    metrics["supply_coverage_ratio"],
+                    float(truth["expected_supply_coverage_ratio"]),
+                ),
+            )
+            if abs(got - want) > NUMERIC_TOLERANCE
+        ]
+        wrong += [
+            name
+            for name, got, want in (
+                ("metrics.participant_count", metrics["participant_count"], payload["participant_count"]),
+                (
+                    "metrics.total_demand_quantity",
+                    metrics["total_demand_quantity"],
+                    payload["total_demand_quantity"],
+                ),
+                ("request_id", body["request_id"], payload["request_id"]),
+                (
+                    "input_context_version",
+                    body["input_context_version"],
+                    payload["input_context_version"],
+                ),
+            )
+            if got != want
+        ]
         score(
             "numeric_accuracy",
-            abs(metrics["moq_attainment_ratio"] - float(truth["expected_moq_attainment_ratio"]))
-            <= NUMERIC_TOLERANCE
-            and abs(
-                metrics["supply_coverage_ratio"]
-                - float(truth["expected_supply_coverage_ratio"])
-            )
-            <= NUMERIC_TOLERANCE,
+            not wrong,
             eval_id,
-            f"{metrics['moq_attainment_ratio']} / {metrics['supply_coverage_ratio']}",
+            ", ".join(wrong)
+            or f"{metrics['moq_attainment_ratio']} / {metrics['supply_coverage_ratio']}",
         )
 
         moq_status, supply_status = derive_status(metrics)
@@ -375,6 +515,13 @@ def evaluate() -> dict[str, Any]:
         # ⛔ **형태만 보지도 않는다.** 2026-09-11 재현에서 문장 속 수량을 `999999` 로
         #    바꿔도 정규식은 그대로 통과했다. 기대 문장을 평가셋·정답으로 완성해
         #    **한 글자씩** 대조한다. 줄 수·형태·상태 코드·숫자가 한꺼번에 걸린다.
+        # 판단 사유도 같은 대조 대상이다. 근거 세 줄이 멀쩡해도 이 한 문장이
+        # 딴소리를 하면 「설명과 구조화 결과가 모순되지 않는다」가 아니다.
+        reason_ok = body["analysis_reason"] == REASON_TEMPLATES[
+            truth["expected_moq_status"] == "MOQ_MET",
+            truth["expected_supply_status"] == "SUPPLY_SUFFICIENT",
+        ]
+
         evidence_lines = body["calculation_evidence"]
         wanted = expected_evidence(inputs[eval_id], truth)
         mismatched = [
@@ -392,11 +539,19 @@ def evaluate() -> dict[str, Any]:
         score(
             "evidence_consistency",
             not mismatched
+            and reason_ok
             # 반대 상태가 같이 실려 있으면 설명이 스스로 모순이다. 동일성 대조로 이미
             # 걸리지만, 기대 문장 쪽이 잘못 만들어져도 이 조건은 남아 있게 둔다.
             and not any(token in evidence for token in opposite),
             eval_id,
-            "" if not mismatched else f"근거 {[i + 1 for i in mismatched]}번째 줄이 기대와 다르다",
+            "; ".join(
+                part
+                for part in (
+                    f"근거 {[i + 1 for i in mismatched]}번째 줄이 기대와 다르다" if mismatched else "",
+                    "" if reason_ok else "판단 사유가 템플릿과 다르다",
+                )
+                if part
+            ),
         )
 
     metrics_report: dict[str, Any] = {}
@@ -425,6 +580,7 @@ def evaluate() -> dict[str, Any]:
 
     return {
         "dataset_version": DATASET_VERSION,
+        "dataset_integrity_errors": integrity_errors,
         "numeric_tolerance": NUMERIC_TOLERANCE,
         "calculation_policy_version": METRICS_VERSION,
         "evaluated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
@@ -438,6 +594,7 @@ def evaluate() -> dict[str, Any]:
         "measured": measured,
         "unmeasured_metrics": unmeasured,
         "all_targets_met": bool(truths)
+        and not integrity_errors
         and not unmeasured
         and all(
             entry["target_met"] for entry in metrics_report.values() if entry["target_met"] is not None
@@ -466,6 +623,11 @@ def main() -> int:
         note = f"  ({entry['count']}/{entry['denominator']})"
         print(f"{name:<38}{value:>9}{target:>9}   {mark}{note}")
     print()
+    if report["dataset_integrity_errors"]:
+        print("FAIL 데이터셋 무결성")
+        for line in report["dataset_integrity_errors"]:
+            print(f"   {line}")
+        print()
     if report["failures"]:
         print(f"FAIL 실패 {len(report['failures'])}건")
         for item in report["failures"][:10]:

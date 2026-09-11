@@ -410,3 +410,209 @@ class SchemaFirstTest(unittest.TestCase):
             self.assertEqual(entry["count"], 94, name)
         self.assertFalse(report["all_targets_met"])
 
+
+class EchoFieldTest(unittest.TestCase):
+    """`metrics` 의 네 필드와 요청 참조가 요청값을 그대로 되돌려 주는지 본다.
+
+    비율 두 개만 보던 시절에는 나머지를 아무 값으로 바꿔도 95/95 였다.
+    """
+
+    def _numeric_count(self, broken):
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+
+        with mock.patch.object(
+            runner, "handle_bid_guide", side_effect=lambda payload: broken(original(payload))
+        ):
+            return runner.evaluate()["metrics"]["numeric_accuracy"]["count"]
+
+    def test_wrong_participant_count_fails(self):
+        def tamper(body):
+            body["metrics"]["participant_count"] = 999
+            return body
+
+        self.assertEqual(self._numeric_count(tamper), 0)
+
+    def test_wrong_total_demand_quantity_fails(self):
+        def tamper(body):
+            body["metrics"]["total_demand_quantity"] = 999
+            return body
+
+        self.assertLessEqual(self._numeric_count(tamper), 1)
+
+    def test_response_for_another_request_fails(self):
+        """⛔ 다른 요청의 결과라면 숫자가 맞아도 맞은 것이 아니다."""
+
+        def tamper(body):
+            body["request_id"] = "SELLER_EVAL_999"
+            return body
+
+        self.assertEqual(self._numeric_count(tamper), 0)
+
+    def test_wrong_input_context_version_fails(self):
+        def tamper(body):
+            body["input_context_version"] = "eval-context-v9"
+            return body
+
+        self.assertEqual(self._numeric_count(tamper), 0)
+
+
+class AnalysisReasonTest(unittest.TestCase):
+    """계약이 AI 에게 맡긴 판단 사유 한 문장도 채점 대상이다."""
+
+    def test_unsupported_claim_fails_evidence_consistency(self):
+        """「AI 아키텍처 및 안전성 정책 초안」 24절이 금지한 확정적 예측."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+
+        def tamper(payload):
+            body = original(payload)
+            body["analysis_reason"] = "이 가격이면 반드시 판매에 성공합니다."
+            return body
+
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=tamper):
+            report = runner.evaluate()
+        self.assertEqual(report["metrics"]["evidence_consistency"]["count"], 0)
+
+    def test_reason_of_the_opposite_status_fails(self):
+        """근거 세 줄이 멀쩡해도 사유가 반대 상태를 말하면 모순이다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+
+        def tamper(payload):
+            body = original(payload)
+            body["analysis_reason"] = runner.REASON_TEMPLATES[False, False]
+            return body
+
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=tamper):
+            report = runner.evaluate()
+        # (False, False) 가 정답인 Case 만 남는다.
+        self.assertLess(report["metrics"]["evidence_consistency"]["count"], 95)
+
+
+class SchemaPreflightTest(unittest.TestCase):
+    """스키마는 **값이 닿기 전에** 전부 훑는다."""
+
+    def test_unknown_keyword_on_an_unvisited_branch_is_caught(self):
+        """⛔ 빈 배열의 `items` 가지는 한 번도 걸어 보지 않는다. 그래도 잡아야 한다."""
+        import copy
+
+        from moongcheap_ai.seller_analysis.evaluation.runner import (
+            RESPONSE_SCHEMA,
+            validate_against_schema,
+        )
+
+        schema = copy.deepcopy(json.loads(RESPONSE_SCHEMA.read_text(encoding="utf-8")))
+        schema["properties"]["unresolved_items"]["items"]["pattern"] = "^X"
+        body = {
+            "request_id": "X",
+            "input_context_version": "X",
+            "metrics": {
+                "participant_count": 1,
+                "total_demand_quantity": 1,
+                "moq_attainment_ratio": 1.0,
+                "supply_coverage_ratio": 1.0,
+            },
+            "analysis_reason": "X",
+            "calculation_evidence": ["X"],
+            "unresolved_items": [],
+            "calculation_policy_version": "seller-metrics-v1",
+        }
+        with self.assertRaises(NotImplementedError):
+            validate_against_schema(body, schema)
+
+    def test_non_finite_number_fails_schema_validation(self):
+        """⛔ `inf` 는 어떤 `minimum` 도 통과한다. JSON 에 없는 값이다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.handle_bid_guide
+
+        def tamper(payload):
+            body = original(payload)
+            body["metrics"]["supply_coverage_ratio"] = float("inf")
+            return body
+
+        with mock.patch.object(runner, "handle_bid_guide", side_effect=tamper):
+            report = runner.evaluate()
+        self.assertEqual(report["metrics"]["response_schema_validation_success"]["count"], 0)
+
+
+class DatasetIntegrityTest(unittest.TestCase):
+    """평가셋과 정답이 서로 맞는 짝인지 채점 전에 본다.
+
+    2026-09-11 재현 — 양쪽에 첫 행을 하나씩 더 붙이면 101건인데 전 지표 목표 달성이었다.
+    """
+
+    def setUp(self):
+        from moongcheap_ai.seller_analysis.evaluation.runner import (
+            EVAL_CSV,
+            GROUND_TRUTH_CSV,
+            read_csv,
+        )
+
+        self.inputs = read_csv(EVAL_CSV)
+        self.truths = read_csv(GROUND_TRUTH_CSV)
+
+    def test_frozen_dataset_is_a_matching_pair(self):
+        from moongcheap_ai.seller_analysis.evaluation.runner import dataset_integrity_errors
+
+        self.assertEqual(dataset_integrity_errors(self.inputs, self.truths), [])
+
+    def test_duplicate_id_is_reported(self):
+        from moongcheap_ai.seller_analysis.evaluation.runner import dataset_integrity_errors
+
+        errors = dataset_integrity_errors(
+            self.inputs + [self.inputs[0]], self.truths + [self.truths[0]]
+        )
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(all("중복" in line for line in errors))
+
+    def test_missing_truth_row_is_reported(self):
+        from moongcheap_ai.seller_analysis.evaluation.runner import dataset_integrity_errors
+
+        self.assertTrue(dataset_integrity_errors(self.inputs, self.truths[:-1]))
+
+    def test_extra_truth_row_is_reported(self):
+        from moongcheap_ai.seller_analysis.evaluation.runner import dataset_integrity_errors
+
+        extra = dict(self.truths[0], eval_id="SELLER_EVAL_999")
+        self.assertTrue(dataset_integrity_errors(self.inputs, self.truths + [extra]))
+
+    def test_broken_dataset_never_reports_a_pass(self):
+        """⛔ 짝이 어긋난 채로는 한 건도 채점하지 않고, 통과로도 보고하지 않는다."""
+        from unittest import mock
+
+        from moongcheap_ai.seller_analysis.evaluation import runner
+
+        original = runner.read_csv
+
+        def duplicated(path):
+            rows = original(path)
+            return rows + [rows[0]]
+
+        with mock.patch.object(runner, "read_csv", side_effect=duplicated):
+            report = runner.evaluate()
+
+        self.assertTrue(report["dataset_integrity_errors"])
+        self.assertFalse(report["all_targets_met"])
+        self.assertEqual(report["case_count"], 0)
+        self.assertEqual(sorted(report["unmeasured_metrics"]), sorted(report["metrics"]))
+
+    def test_integrity_check_does_not_hardcode_the_v1_shape(self):
+        """⛔ 건수·분포를 박으면 골드셋을 버전별로 못 늘린다 (정의서 26절)."""
+        from moongcheap_ai.seller_analysis.evaluation.runner import dataset_integrity_errors
+
+        small = [dict(self.inputs[0], eval_id="OTHER_SET_001")]
+        small_truth = [dict(self.truths[0], eval_id="OTHER_SET_001")]
+        self.assertEqual(dataset_integrity_errors(small, small_truth), [])
